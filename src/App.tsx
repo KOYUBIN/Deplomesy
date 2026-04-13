@@ -1,5 +1,9 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import type { GameState, Faction, RoomInfo, Screen, ClientUIState, DiplomacyStatus } from './types';
+import type { GameState, Faction, RoomInfo, Screen, ClientUIState, DiplomacyStatus, UnitType, UnitCount } from './types';
+
+function totalCount(units: UnitCount[]): number {
+  return units.reduce((s, u) => s + u.count, 0);
+}
 import socket from './socket';
 import LobbyScreen from './components/LobbyScreen';
 import WaitingRoom from './components/WaitingRoom';
@@ -115,7 +119,7 @@ export default function App() {
       const canAttack = to.ownerId === null || to.ownerId === myPlayerIndex ||
         players[myPlayerIndex].diplomacy[to.ownerId] !== 'ally';
 
-      if (adjacent && canAttack && from.armies >= 2) {
+      if (adjacent && canAttack && totalCount(from.units) >= 2) {
         socket.emit('move_armies', { fromId: moveFrom, toId: id });
         setUIState({ selectedTerritoryId: null, moveFrom: null });
         return;
@@ -125,8 +129,8 @@ export default function App() {
       return;
     }
 
-    // Select own territory with enough armies
-    if (territories[id].ownerId === myPlayerIndex && territories[id].armies >= 2) {
+    // Select own territory with enough units to move
+    if (territories[id].ownerId === myPlayerIndex && totalCount(territories[id].units) >= 2) {
       setUIState({ selectedTerritoryId: id, moveFrom: id });
     }
   }, [gameState, isMyTurn, myPlayerIndex, uiState]);
@@ -135,8 +139,8 @@ export default function App() {
     socket.emit('set_diplomacy', { targetId, status });
   }, []);
 
-  const handleRecruit = useCallback((territoryId: number, count: number) => {
-    socket.emit('recruit', { territoryId, count });
+  const handleRecruit = useCallback((territoryId: number, unitType: UnitType, count: number) => {
+    socket.emit('recruit', { territoryId, unitType, count });
   }, []);
 
   const handleEndTurn = useCallback(() => {

@@ -2,8 +2,8 @@ import express from 'express';
 import { createServer } from 'http';
 import { Server, Socket } from 'socket.io';
 import path from 'path';
-import type { Faction, Room, RoomInfo, GameState, DiplomacyStatus } from './types';
-import { createInitialState, moveArmies, recruitArmies, setDiplomacy, endTurn, canMoveTo } from './gameLogic';
+import type { Faction, Room, RoomInfo, GameState, DiplomacyStatus, UnitType } from './types';
+import { createInitialState, moveArmies, recruitUnits, setDiplomacy, endTurn, canMoveTo } from './gameLogic';
 import { runAITurns } from './aiPlayer';
 import { AI_NAMES, AI_FACTIONS, PLAYER_COLORS } from './mapData';
 
@@ -182,8 +182,8 @@ io.on('connection', (socket: Socket) => {
     validateAndUpdate((s) => moveArmies(s, fromId, toId));
   });
 
-  socket.on('recruit', ({ territoryId, count }: { territoryId: number; count: number }) => {
-    validateAndUpdate((s) => recruitArmies(s, territoryId, count));
+  socket.on('recruit', ({ territoryId, unitType, count }: { territoryId: number; unitType: UnitType; count: number }) => {
+    validateAndUpdate((s) => recruitUnits(s, territoryId, unitType, count));
   });
 
   socket.on('set_diplomacy', ({ targetId, status }: { targetId: number; status: DiplomacyStatus }) => {

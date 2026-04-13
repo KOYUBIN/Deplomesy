@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import type { GameState, DiplomacyStatus } from '../types';
-import { WIN_THRESHOLD } from '../mapData';
+import type { GameState, DiplomacyStatus, UnitType, UnitCount } from '../types';
+import { WIN_THRESHOLD, UNIT_DEFS } from '../mapData';
 
 interface Props {
   state: GameState;
@@ -8,8 +8,29 @@ interface Props {
   isMyTurn: boolean;
   isAITurn: boolean;
   onDiplomacy: (targetId: number, status: DiplomacyStatus) => void;
-  onRecruit: (territoryId: number, count: number) => void;
+  onRecruit: (territoryId: number, unitType: UnitType, count: number) => void;
   onEndTurn: () => void;
+}
+
+function totalCount(units: UnitCount[]): number {
+  return units.reduce((s, u) => s + u.count, 0);
+}
+
+function totalAttack(units: UnitCount[]): number {
+  return units.reduce((s, u) => s + UNIT_DEFS[u.type].attack * u.count, 0);
+}
+
+function totalDefense(units: UnitCount[]): number {
+  return units.reduce((s, u) => s + UNIT_DEFS[u.type].defense * u.count, 0);
+}
+
+// Units available to a faction (common + faction-specific)
+function availableUnits(faction: string): UnitType[] {
+  const all: UnitType[] = ['infantry', 'archer', 'marine', 'siege_tank', 'zergling', 'hydralisk', 'zealot', 'dragoon'];
+  return all.filter((t) => {
+    const def = UNIT_DEFS[t];
+    return !def.faction || def.faction === faction;
+  });
 }
 
 export default function SidePanel({
@@ -23,12 +44,11 @@ export default function SidePanel({
 }: Props) {
   const [tab, setTab] = useState<'status' | 'diplomacy' | 'log'>('status');
   const [recruitId, setRecruitId] = useState<number | null>(null);
+  const [recruitUnitType, setRecruitUnitType] = useState<UnitType>('infantry');
   const [recruitCount, setRecruitCount] = useState(1);
 
   const me = state.players[myPlayerIndex];
   const myTerritories = state.territories.filter((t) => t.ownerId === myPlayerIndex);
-  const maxRecruit = me ? Math.floor(me.minerals / 2) : 0;
-
   const currentPlayer = state.players[state.currentPlayerId];
 
   const dipLabel: Record<DiplomacyStatus, string> = {
@@ -39,6 +59,31 @@ export default function SidePanel({
     f === 'terran' ? '테란' : f === 'zerg' ? '저그' : '프로토스';
 
   if (!me) return null;
+
+  const myUnits = availableUnits(me.faction);
+  const selectedDef = UNIT_DEFS[recruitUnitType];
+  const actualCost = selectedDef.cost;
+  const maxAffordable = Math.floor(me.minerals / actualCost);
+  const safeCount = Math.min(recruitCount, maxAffordable);
+
+  // Display: for zerg zergling, show ×2 bonus
+  const actualRecruited = (me.faction === 'zerg' && selectedDef.zergDouble) ? safeCount * 2 : safeCount;
+
+  function openRecruit(id: number) {
+    // Default to first affordable unit
+    const affordable = myUnits.find((u) => UNIT_DEFS[u].cost <= me.minerals) ?? myUnits[0];
+    setRecruitUnitType(affordable);
+    setRecruitCount(1);
+    setRecruitId(id);
+  }
+
+  function handleUnitTypeChange(ut: UnitType) {
+    setRecruitUnitType(ut);
+    setRecruitCount(1);
+  }
+
+  const totalMyUnits = myTerritories.reduce((s, t) => s + totalCount(t.units), 0);
+  const totalMyAtk   = myTerritories.reduce((s, t) => s + totalAttack(t.units), 0);
 
   return (
     <div className="side-panel">
@@ -51,7 +96,7 @@ export default function SidePanel({
         <div className="player-bar-stats">
           <span>💎 {me.minerals}</span>
           <span>🗺 {myTerritories.length}/{WIN_THRESHOLD}</span>
-          <span>⚔ {myTerritories.reduce((s, t) => s + t.armies, 0)}</span>
+          <span>⚔ {totalMyAtk} ({totalMyUnits}기)</span>
         </div>
       </div>
 
@@ -104,19 +149,34 @@ export default function SidePanel({
               <>
                 <h3 className="section-title" style={{ marginTop: 16 }}>내 행성 (클릭해서 징집)</h3>
                 <div className="territory-list">
-                  {myTerritories.map((t) => (
-                    <div key={t.id} className="territory-row">
-                      <span className="territory-row-name">{t.name}</span>
-                      <span className="territory-row-info">⚔{t.armies} 💎{t.minerals}</span>
-                      <button
-                        className="recruit-mini-btn"
-                        onClick={() => { setRecruitId(t.id); setRecruitCount(1); }}
-                        disabled={me.minerals < 2}
-                      >
-                        +징집
-                      </button>
-                    </div>
-                  ))}
+                  {myTerritories.map((t) => {
+                    const cnt = totalCount(t.units);
+                    const atk = totalAttack(t.units);
+                    const def = totalDefense(t.units);
+                    return (
+                      <div key={t.id} className="territory-row">
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div className="territory-row-name">{t.name}</div>
+                          {cnt > 0 && (
+                            <div style={{ fontSize: 10, color: '#aaa', marginTop: 1 }}>
+                              {t.units.map((u) => `${UNIT_DEFS[u.type].name}×${u.count}`).join(', ')}
+                              {'  '}⚔{atk}/🛡{def}
+                            </div>
+                          )}
+                        </div>
+                        <div style={{ textAlign: 'right', fontSize: 11, color: '#ccc', marginRight: 6 }}>
+                          {cnt}기 💎{t.minerals}
+                        </div>
+                        <button
+                          className="recruit-mini-btn"
+                          onClick={() => openRecruit(t.id)}
+                          disabled={me.minerals < 1}
+                        >
+                          +징집
+                        </button>
+                      </div>
+                    );
+                  })}
                 </div>
 
                 {recruitId !== null && (
@@ -124,16 +184,65 @@ export default function SidePanel({
                     <div className="recruit-title">
                       {state.territories[recruitId]?.name} 징집
                     </div>
+
+                    {/* Unit type selector */}
+                    <div style={{ marginBottom: 8 }}>
+                      <div style={{ fontSize: 11, color: '#aaa', marginBottom: 4 }}>유닛 선택:</div>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                        {myUnits.map((ut) => {
+                          const d = UNIT_DEFS[ut];
+                          const isSelected = ut === recruitUnitType;
+                          const canAfford = d.cost <= me.minerals;
+                          return (
+                            <button
+                              key={ut}
+                              onClick={() => handleUnitTypeChange(ut)}
+                              style={{
+                                padding: '3px 7px',
+                                fontSize: 11,
+                                border: isSelected ? '2px solid #7df' : '1px solid #555',
+                                borderRadius: 4,
+                                background: isSelected ? '#1a3a4a' : '#1e1e2e',
+                                color: canAfford ? '#eee' : '#666',
+                                cursor: canAfford ? 'pointer' : 'default',
+                              }}
+                            >
+                              {d.name}
+                              <span style={{ color: '#7df', marginLeft: 4 }}>{d.cost}💎</span>
+                              {d.zergDouble && <span style={{ color: '#f7a', marginLeft: 2 }}>×2</span>}
+                            </button>
+                          );
+                        })}
+                      </div>
+                      {selectedDef.special && (
+                        <div style={{ fontSize: 10, color: '#aaa', marginTop: 4, fontStyle: 'italic' }}>
+                          {selectedDef.special}
+                        </div>
+                      )}
+                      <div style={{ fontSize: 11, color: '#ccc', marginTop: 4 }}>
+                        ⚔{selectedDef.attack} / 🛡{selectedDef.defense} &nbsp;|&nbsp; 비용 {selectedDef.cost}💎/기
+                      </div>
+                    </div>
+
+                    {/* Count selector */}
                     <div className="recruit-row">
                       <button onClick={() => setRecruitCount(Math.max(1, recruitCount - 1))}>-</button>
-                      <span>{recruitCount}군 (비용: {recruitCount * 2}💎)</span>
-                      <button onClick={() => setRecruitCount(Math.min(maxRecruit, recruitCount + 1))}>+</button>
+                      <span>
+                        {safeCount}기 징집
+                        {actualRecruited !== safeCount ? ` → ${actualRecruited}기 (×2 보너스)` : ''}
+                        {' '}(비용: {safeCount * actualCost}💎)
+                      </span>
+                      <button onClick={() => setRecruitCount(Math.min(Math.max(1, maxAffordable), recruitCount + 1))}>+</button>
                     </div>
+
                     <div className="recruit-actions">
                       <button
                         className="confirm-btn"
-                        disabled={recruitCount * 2 > me.minerals}
-                        onClick={() => { onRecruit(recruitId, recruitCount); setRecruitId(null); }}
+                        disabled={safeCount < 1 || safeCount * actualCost > me.minerals}
+                        onClick={() => {
+                          onRecruit(recruitId, recruitUnitType, safeCount);
+                          setRecruitId(null);
+                        }}
                       >
                         징집
                       </button>

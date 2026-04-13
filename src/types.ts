@@ -2,6 +2,28 @@ export type Faction = 'terran' | 'zerg' | 'protoss';
 export type DiplomacyStatus = 'war' | 'neutral' | 'ally';
 export type GamePhase = 'setup' | 'playing' | 'ended';
 
+export type UnitType =
+  | 'infantry' | 'archer'
+  | 'marine'   | 'siege_tank'
+  | 'zergling' | 'hydralisk'
+  | 'zealot'   | 'dragoon';
+
+export interface UnitDef {
+  type: UnitType;
+  name: string;
+  attack: number;
+  defense: number;
+  cost: number;
+  faction?: Faction;
+  zergDouble?: boolean;
+  special?: string;
+}
+
+export interface UnitCount {
+  type: UnitType;
+  count: number;
+}
+
 export interface Territory {
   id: number;
   name: string;
@@ -10,7 +32,7 @@ export interface Territory {
   adjacentIds: number[];
   minerals: number;
   ownerId: number | null;
-  armies: number;
+  units: UnitCount[];
 }
 
 export interface Player {
@@ -34,13 +56,11 @@ export interface GameState {
   winner: number | null;
 }
 
-// Client-only UI state (not sent over wire)
 export interface ClientUIState {
   selectedTerritoryId: number | null;
   moveFrom: number | null;
 }
 
-// Room info received from server
 export interface RoomInfo {
   code: string;
   players: Array<{ name: string; faction: Faction; playerIndex: number }>;
