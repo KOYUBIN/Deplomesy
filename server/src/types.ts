@@ -34,17 +34,31 @@ export interface GameState {
   winner: number | null;
 }
 
-// Client-only UI state (not sent over wire)
-export interface ClientUIState {
-  selectedTerritoryId: number | null;
-  moveFrom: number | null;
+export interface PlayerSetup {
+  name: string;
+  faction: Faction;
+  isAI: boolean;
 }
 
-// Room info received from server
+// Room types (server-only)
+export interface RoomPlayer {
+  socketId: string;
+  name: string;
+  faction: Faction;
+  playerIndex: number;
+}
+
+export interface Room {
+  code: string;
+  hostSocketId: string;
+  players: RoomPlayer[];
+  gameState: GameState | null;
+  aiRunning: boolean;
+}
+
+// Info sent to clients (no socketIds)
 export interface RoomInfo {
   code: string;
   players: Array<{ name: string; faction: Faction; playerIndex: number }>;
   started: boolean;
 }
-
-export type Screen = 'lobby' | 'waiting' | 'playing' | 'ended';

@@ -512,6 +512,127 @@ html, body, #root {
 .start-btn:hover { filter: brightness(1.15); transform: translateY(-1px); }
 .start-btn:active { transform: translateY(0); }
 
+/* ── Turn Indicator (side panel) ─────────────────────────────────────── */
+.turn-indicator {
+  padding: 8px 14px;
+  font-size: 12px;
+  color: var(--text-dim);
+  border-bottom: 1px solid;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: var(--surface2);
+}
+.turn-number { font-size: 11px; opacity: 0.7; }
+
+/* ── Lobby mode select ────────────────────────────────────────────────── */
+.lobby-mode-select {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.lobby-big-btn {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 16px 18px;
+  background: var(--surface2);
+  border: 2px solid var(--border);
+  border-radius: 10px;
+  cursor: pointer;
+  font-family: var(--font);
+  color: var(--text);
+  text-align: left;
+  transition: all 0.15s;
+  width: 100%;
+}
+
+.lobby-big-btn:hover { border-color: var(--accent); background: #4da6ff0d; }
+
+.lobby-btn-icon { font-size: 28px; }
+.lobby-btn-label { font-size: 15px; font-weight: bold; display: block; }
+.lobby-btn-sub { font-size: 12px; color: var(--text-dim); display: block; margin-top: 2px; }
+
+.lobby-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.lobby-back { flex: 0 0 auto; }
+.lobby-confirm { flex: 1; margin-top: 0; }
+
+/* Code input */
+.code-input {
+  text-align: center;
+  font-size: 26px;
+  letter-spacing: 10px;
+  font-weight: bold;
+}
+
+/* Error box */
+.error-box {
+  background: #4a0a0a;
+  border: 1px solid var(--danger);
+  border-radius: 6px;
+  padding: 10px 14px;
+  color: #ffaaaa;
+  font-size: 12px;
+  margin-bottom: 12px;
+}
+
+/* ── Room code display ────────────────────────────────────────────────── */
+.room-code-box {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 16px;
+  text-align: center;
+  margin-bottom: 22px;
+}
+
+.room-code-label { font-size: 11px; color: var(--text-dim); letter-spacing: 1px; text-transform: uppercase; }
+.room-code {
+  font-size: 40px;
+  font-weight: bold;
+  letter-spacing: 12px;
+  color: var(--accent);
+  padding: 8px 0;
+  text-shadow: 0 0 20px #4da6ff55;
+}
+.room-code-hint { font-size: 11px; color: var(--text-dim); }
+
+/* Player slot list */
+.player-slot-list { display: flex; flex-direction: column; gap: 6px; }
+
+.player-slot {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  background: var(--surface2);
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  font-size: 13px;
+}
+
+.ai-slot { opacity: 0.5; border-style: dashed; }
+
+.slot-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+.slot-name { flex: 1; }
+.slot-faction { font-size: 11px; }
+
+/* Waiting message */
+.waiting-msg {
+  text-align: center;
+  color: var(--text-dim);
+  font-size: 13px;
+  padding: 16px;
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
 /* ── End Screen ───────────────────────────────────────────────────────── */
 .end-screen {
   display: flex;

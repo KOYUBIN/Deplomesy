@@ -1,141 +1,211 @@
-import React, { useState, useCallback, useRef } from 'react';
-import type { GameState, SetupConfig } from './types';
-import { createInitialState, moveArmies, recruitArmies, setDiplomacy, endTurn, canMoveTo } from './gameLogic';
-import { runAITurns } from './aiPlayer';
+import React, { useState, useEffect, useCallback } from 'react';
+import type { GameState, Faction, RoomInfo, Screen, ClientUIState, DiplomacyStatus } from './types';
+import socket from './socket';
+import LobbyScreen from './components/LobbyScreen';
+import WaitingRoom from './components/WaitingRoom';
 import GameMap from './components/GameMap';
 import SidePanel from './components/SidePanel';
-import StartScreen from './components/StartScreen';
 import EndScreen from './components/EndScreen';
-import type { DiplomacyStatus } from './types';
 
 export default function App() {
+  const [screen, setScreen] = useState<Screen>('lobby');
+  const [roomInfo, setRoomInfo] = useState<RoomInfo | null>(null);
+  const [myPlayerIndex, setMyPlayerIndex] = useState<number>(0);
+  const [isHost, setIsHost] = useState(false);
   const [gameState, setGameState] = useState<GameState | null>(null);
+  const [uiState, setUIState] = useState<ClientUIState>({ selectedTerritoryId: null, moveFrom: null });
+  const [error, setError] = useState<string | null>(null);
+  const [isConnecting, setIsConnecting] = useState(false);
   const [isAITurn, setIsAITurn] = useState(false);
-  const aiRunning = useRef(false);
 
-  const handleStart = useCallback((cfg: SetupConfig) => {
-    setGameState(createInitialState(cfg));
-    setIsAITurn(false);
+  // ── Socket setup ──────────────────────────────────────────────────────────
+  useEffect(() => {
+    socket.connect();
+
+    socket.on('room_created', ({ code, room, myPlayerIndex: idx }: { code: string; room: RoomInfo; myPlayerIndex: number }) => {
+      setRoomInfo(room);
+      setMyPlayerIndex(idx);
+      setIsHost(true);
+      setIsConnecting(false);
+      setError(null);
+      setScreen('waiting');
+    });
+
+    socket.on('room_joined', ({ room, myPlayerIndex: idx }: { room: RoomInfo; myPlayerIndex: number }) => {
+      setRoomInfo(room);
+      setMyPlayerIndex(idx);
+      setIsHost(false);
+      setIsConnecting(false);
+      setError(null);
+      setScreen('waiting');
+    });
+
+    socket.on('room_updated', ({ room }: { room: RoomInfo }) => {
+      setRoomInfo(room);
+    });
+
+    socket.on('game_started', ({ gameState: gs }: { gameState: GameState }) => {
+      setGameState(gs);
+      setUIState({ selectedTerritoryId: null, moveFrom: null });
+      setScreen('playing');
+    });
+
+    socket.on('state_updated', ({ gameState: gs }: { gameState: GameState }) => {
+      setGameState(gs);
+      setUIState({ selectedTerritoryId: null, moveFrom: null });
+
+      // Detect AI turn
+      const currentIsAI = gs.players[gs.currentPlayerId]?.isAI ?? false;
+      setIsAITurn(currentIsAI && gs.phase === 'playing');
+
+      if (gs.phase === 'ended') setScreen('ended');
+    });
+
+    socket.on('error', ({ message }: { message: string }) => {
+      setError(message);
+      setIsConnecting(false);
+    });
+
+    return () => {
+      socket.off('room_created');
+      socket.off('room_joined');
+      socket.off('room_updated');
+      socket.off('game_started');
+      socket.off('state_updated');
+      socket.off('error');
+      socket.disconnect();
+    };
   }, []);
 
-  const handleRestart = useCallback(() => {
-    setGameState(null);
-    setIsAITurn(false);
-    aiRunning.current = false;
+  // ── Lobby actions ─────────────────────────────────────────────────────────
+  const handleCreateRoom = useCallback((name: string, faction: Faction) => {
+    setIsConnecting(true);
+    setError(null);
+    socket.emit('create_room', { name, faction });
   }, []);
 
-  const triggerAIIfNeeded = useCallback(async (state: GameState) => {
-    if (state.phase !== 'playing') return;
-    if (!state.players[state.currentPlayerId].isAI) return;
-    if (aiRunning.current) return;
-
-    aiRunning.current = true;
-    setIsAITurn(true);
-
-    const finalState = await runAITurns(state, (s) => setGameState({ ...s }));
-    aiRunning.current = false;
-    setIsAITurn(false);
-    setGameState({ ...finalState });
+  const handleJoinRoom = useCallback((code: string, name: string, faction: Faction) => {
+    setIsConnecting(true);
+    setError(null);
+    socket.emit('join_room', { code, name, faction });
   }, []);
 
-  const handleTerritoryClick = useCallback(
-    (id: number) => {
-      if (!gameState || isAITurn || gameState.currentPlayerId !== 0) return;
+  const handleStartGame = useCallback((aiCount: number) => {
+    socket.emit('start_game', { aiCount });
+  }, []);
 
-      const { territories, players, moveFrom, actionMode } = gameState;
-      const clicked = territories[id];
+  // ── In-game actions ───────────────────────────────────────────────────────
+  const isMyTurn = gameState !== null && gameState.currentPlayerId === myPlayerIndex;
 
-      // If a move is in progress
-      if (moveFrom !== null) {
-        if (id === moveFrom) {
-          // Deselect
-          setGameState({ ...gameState, moveFrom: null, selectedTerritoryId: null, actionMode: 'none' });
-          return;
-        }
-        if (canMoveTo(territories, players, moveFrom, id, 0)) {
-          const newState = moveArmies(gameState, moveFrom, id);
-          setGameState(newState);
-          return;
-        }
-        // Invalid target - just deselect
-        setGameState({ ...gameState, moveFrom: null, selectedTerritoryId: null, actionMode: 'none' });
+  const handleTerritoryClick = useCallback((id: number) => {
+    if (!gameState || !isMyTurn) return;
+    const { territories, players } = gameState;
+    const { moveFrom } = uiState;
+
+    if (moveFrom !== null) {
+      if (id === moveFrom) {
+        setUIState({ selectedTerritoryId: null, moveFrom: null });
         return;
       }
 
-      // Select own territory
-      if (clicked.ownerId === 0 && clicked.armies >= 2) {
-        setGameState({
-          ...gameState,
-          moveFrom: id,
-          selectedTerritoryId: id,
-          actionMode: 'move',
-        });
+      // Check if valid target
+      const from = territories[moveFrom];
+      const to = territories[id];
+      const adjacent = from.adjacentIds.includes(id);
+      const canAttack = to.ownerId === null || to.ownerId === myPlayerIndex ||
+        players[myPlayerIndex].diplomacy[to.ownerId] !== 'ally';
+
+      if (adjacent && canAttack && from.armies >= 2) {
+        socket.emit('move_armies', { fromId: moveFrom, toId: id });
+        setUIState({ selectedTerritoryId: null, moveFrom: null });
+        return;
       }
-    },
-    [gameState, isAITurn]
-  );
 
-  const handleDiplomacy = useCallback(
-    (targetId: number, status: DiplomacyStatus) => {
-      if (!gameState || isAITurn || gameState.currentPlayerId !== 0) return;
-      setGameState(setDiplomacy(gameState, targetId, status));
-    },
-    [gameState, isAITurn]
-  );
+      setUIState({ selectedTerritoryId: null, moveFrom: null });
+      return;
+    }
 
-  const handleRecruit = useCallback(
-    (territoryId: number, count: number) => {
-      if (!gameState || isAITurn || gameState.currentPlayerId !== 0) return;
-      setGameState(recruitArmies(gameState, territoryId, count));
-    },
-    [gameState, isAITurn]
-  );
+    // Select own territory with enough armies
+    if (territories[id].ownerId === myPlayerIndex && territories[id].armies >= 2) {
+      setUIState({ selectedTerritoryId: id, moveFrom: id });
+    }
+  }, [gameState, isMyTurn, myPlayerIndex, uiState]);
 
-  const handleEndTurn = useCallback(async () => {
-    if (!gameState || isAITurn || gameState.currentPlayerId !== 0) return;
-    const newState = endTurn(gameState);
-    setGameState(newState);
-    await triggerAIIfNeeded(newState);
-  }, [gameState, isAITurn, triggerAIIfNeeded]);
+  const handleDiplomacy = useCallback((targetId: number, status: DiplomacyStatus) => {
+    socket.emit('set_diplomacy', { targetId, status });
+  }, []);
 
-  const handleRecruitMode = useCallback(
-    (territoryId: number) => {
-      if (!gameState) return;
-      setGameState({
-        ...gameState,
-        moveFrom: null,
-        selectedTerritoryId: territoryId,
-        actionMode: 'none',
-      });
-    },
-    [gameState]
-  );
+  const handleRecruit = useCallback((territoryId: number, count: number) => {
+    socket.emit('recruit', { territoryId, count });
+  }, []);
 
-  if (!gameState) {
-    return <StartScreen onStart={handleStart} />;
+  const handleEndTurn = useCallback(() => {
+    socket.emit('end_turn');
+    setUIState({ selectedTerritoryId: null, moveFrom: null });
+  }, []);
+
+  const handleRestart = useCallback(() => {
+    setScreen('lobby');
+    setRoomInfo(null);
+    setGameState(null);
+    setUIState({ selectedTerritoryId: null, moveFrom: null });
+    setError(null);
+    setIsAITurn(false);
+    socket.disconnect();
+    socket.connect();
+  }, []);
+
+  // ── Render ────────────────────────────────────────────────────────────────
+  if (screen === 'lobby') {
+    return (
+      <LobbyScreen
+        onCreateRoom={handleCreateRoom}
+        onJoinRoom={handleJoinRoom}
+        error={error}
+        isConnecting={isConnecting}
+      />
+    );
   }
 
-  if (gameState.phase === 'ended') {
+  if (screen === 'waiting' && roomInfo) {
+    return (
+      <WaitingRoom
+        roomInfo={roomInfo}
+        myPlayerIndex={myPlayerIndex}
+        isHost={isHost}
+        onStartGame={handleStartGame}
+      />
+    );
+  }
+
+  if (screen === 'ended' && gameState) {
     return <EndScreen state={gameState} onRestart={handleRestart} />;
   }
 
-  return (
-    <div className="game-layout">
-      <div className="map-area">
-        <GameMap
+  if (screen === 'playing' && gameState) {
+    return (
+      <div className="game-layout">
+        <div className="map-area">
+          <GameMap
+            state={gameState}
+            uiState={uiState}
+            myPlayerIndex={myPlayerIndex}
+            isMyTurn={isMyTurn && !isAITurn}
+            onTerritoryClick={handleTerritoryClick}
+          />
+        </div>
+        <SidePanel
           state={gameState}
-          onTerritoryClick={handleTerritoryClick}
-          isAITurn={isAITurn || gameState.currentPlayerId !== 0}
+          myPlayerIndex={myPlayerIndex}
+          isMyTurn={isMyTurn && !isAITurn}
+          isAITurn={isAITurn}
+          onDiplomacy={handleDiplomacy}
+          onRecruit={handleRecruit}
+          onEndTurn={handleEndTurn}
         />
       </div>
-      <SidePanel
-        state={gameState}
-        isAITurn={isAITurn || gameState.currentPlayerId !== 0}
-        onDiplomacy={handleDiplomacy}
-        onRecruit={handleRecruit}
-        onEndTurn={handleEndTurn}
-        onRecruitMode={handleRecruitMode}
-      />
-    </div>
-  );
+    );
+  }
+
+  return <div style={{ color: '#fff', padding: 40 }}>연결 중...</div>;
 }
