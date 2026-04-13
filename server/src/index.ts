@@ -13,11 +13,37 @@ const io = new Server(httpServer, {
   cors: { origin: '*' },
 });
 
-// Serve built client in production
-app.use(express.static(path.join(__dirname, '../../dist')));
-app.get('*', (_req, res) => {
-  res.sendFile(path.join(__dirname, '../../dist/index.html'));
-});
+const isDev = process.env.NODE_ENV !== 'production';
+
+if (isDev) {
+  // Development: proxy everything (except /socket.io) to Vite on port 5174.
+  // Socket.io intercepts /socket.io requests before they reach Express,
+  // so this proxy only receives regular HTTP requests (HTML, JS, CSS, HMR).
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { createProxyMiddleware } = require('http-proxy-middleware');
+  app.use(
+    createProxyMiddleware({
+      target: 'http://localhost:5174',
+      changeOrigin: true,
+      ws: false, // socket.io manages its own WS upgrades
+      on: {
+        error: (_err: Error, _req: unknown, res: unknown) => {
+          const r = res as { headersSent: boolean; writeHead: Function; end: Function };
+          if (!r.headersSent) {
+            r.writeHead(503, { 'Content-Type': 'text/plain; charset=utf-8' });
+            r.end('Vite 개발 서버 시작 중... 잠시 후 새로고침하세요.');
+          }
+        },
+      },
+    })
+  );
+} else {
+  // Production: serve the built client
+  app.use(express.static(path.join(__dirname, '../../dist')));
+  app.get('*', (_req, res) => {
+    res.sendFile(path.join(__dirname, '../../dist/index.html'));
+  });
+}
 
 // ── Room store ──────────────────────────────────────────────────────────────
 
