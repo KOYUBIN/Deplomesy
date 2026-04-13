@@ -1,0 +1,2 @@
+# Deplomesy
+starcraft Deplomesi
