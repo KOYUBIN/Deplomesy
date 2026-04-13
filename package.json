@@ -4,12 +4,13 @@
   "description": "StarCraft Diplomacy Multiplayer Browser Game",
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "vite --host",
     "build": "tsc && vite build",
     "preview": "vite preview",
     "server:dev": "cd server && npx ts-node src/index.ts",
     "server:build": "cd server && npm install && npx tsc",
-    "server:start": "cd server && node dist/index.js"
+    "server:start": "cd server && node dist/index.js",
+    "dev:all": "concurrently -n CLIENT,SERVER -c cyan,yellow \"npm run dev\" \"npm run server:dev\""
   },
   "dependencies": {
     "react": "^18.2.0",
@@ -20,6 +21,7 @@
     "@types/react": "^18.2.0",
     "@types/react-dom": "^18.2.0",
     "@vitejs/plugin-react": "^4.0.0",
+    "concurrently": "^8.2.2",
     "typescript": "^5.2.0",
     "vite": "^5.0.0"
   }
