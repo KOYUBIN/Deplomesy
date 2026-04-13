@@ -1,12 +1,15 @@
-export type Faction = 'terran' | 'zerg' | 'protoss';
+export type Faction = 'terran' | 'zerg' | 'protoss' | 'tal_darim' | 'primal_zerg' | 'nerazim';
 export type DiplomacyStatus = 'war' | 'neutral' | 'ally';
 export type GamePhase = 'setup' | 'playing' | 'ended';
 
 export type UnitType =
-  | 'infantry' | 'archer'
-  | 'marine'   | 'siege_tank'
-  | 'zergling' | 'hydralisk'
-  | 'zealot'   | 'dragoon';
+  | 'infantry'    | 'archer'
+  | 'marine'      | 'siege_tank'   | 'viking'        | 'bunker'
+  | 'zergling'    | 'hydralisk'    | 'mutalisk'       | 'spine_crawler'
+  | 'zealot'      | 'dragoon'      | 'phoenix'        | 'photon_cannon'
+  | 'fanatical'   | 'void_ray'     | 'tal_archon'     | 'xel_naga_tower'
+  | 'primal_zergling' | 'primal_raptor' | 'leviathan' | 'primal_pit'
+  | 'dark_templar' | 'stalker'     | 'oracle'         | 'void_gate';
 
 export interface UnitDef {
   type: UnitType;
@@ -15,6 +18,9 @@ export interface UnitDef {
   defense: number;
   cost: number;
   faction?: Faction;
+  isAir?: boolean;
+  antiAir?: boolean;
+  isStructure?: boolean;
   zergDouble?: boolean;
   special?: string;
 }

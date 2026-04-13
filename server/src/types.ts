@@ -1,12 +1,25 @@
-export type Faction = 'terran' | 'zerg' | 'protoss';
+export type Faction =
+  | 'terran' | 'zerg' | 'protoss'
+  | 'tal_darim' | 'primal_zerg' | 'nerazim';
+
 export type DiplomacyStatus = 'war' | 'neutral' | 'ally';
 export type GamePhase = 'setup' | 'playing' | 'ended';
 
 export type UnitType =
-  | 'infantry' | 'archer'        // 공통
-  | 'marine'   | 'siege_tank'    // 테란
-  | 'zergling' | 'hydralisk'     // 저그
-  | 'zealot'   | 'dragoon';      // 프로토스
+  // 공통
+  | 'infantry' | 'archer'
+  // 테란 도미니온
+  | 'marine' | 'siege_tank' | 'viking' | 'bunker'
+  // 저그 군단
+  | 'zergling' | 'hydralisk' | 'mutalisk' | 'spine_crawler'
+  // 황금함대 프로토스
+  | 'zealot' | 'dragoon' | 'phoenix' | 'photon_cannon'
+  // 탈다림
+  | 'fanatical' | 'void_ray' | 'tal_archon' | 'xel_naga_tower'
+  // 원시저그
+  | 'primal_zergling' | 'primal_raptor' | 'leviathan' | 'primal_pit'
+  // 네라짐
+  | 'dark_templar' | 'stalker' | 'oracle' | 'void_gate';
 
 export interface UnitDef {
   type: UnitType;
@@ -14,9 +27,12 @@ export interface UnitDef {
   attack: number;
   defense: number;
   cost: number;
-  faction?: Faction;       // undefined = 모든 종족 사용 가능
-  zergDouble?: boolean;    // 저그는 2배 수량
-  special?: string;        // 특수 능력 설명
+  faction?: Faction;
+  isAir?: boolean;        // 공중 유닛 — 대공 능력 없이는 방어 불가
+  antiAir?: boolean;      // 공중 유닛 공격 가능
+  isStructure?: boolean;  // 건물 — 이동 불가, 항상 수비에 참여
+  zergDouble?: boolean;   // 저그: 1비용으로 2기 징집
+  special?: string;
 }
 
 export interface UnitCount {

@@ -24,14 +24,30 @@ function totalDefense(units: UnitCount[]): number {
   return units.reduce((s, u) => s + UNIT_DEFS[u.type].defense * u.count, 0);
 }
 
-// Units available to a faction (common + faction-specific)
 function availableUnits(faction: string): UnitType[] {
-  const all: UnitType[] = ['infantry', 'archer', 'marine', 'siege_tank', 'zergling', 'hydralisk', 'zealot', 'dragoon'];
+  const all: UnitType[] = [
+    'infantry', 'archer',
+    'marine', 'siege_tank', 'viking', 'bunker',
+    'zergling', 'hydralisk', 'mutalisk', 'spine_crawler',
+    'zealot', 'dragoon', 'phoenix', 'photon_cannon',
+    'fanatical', 'void_ray', 'tal_archon', 'xel_naga_tower',
+    'primal_zergling', 'primal_raptor', 'leviathan', 'primal_pit',
+    'dark_templar', 'stalker', 'oracle', 'void_gate',
+  ];
   return all.filter((t) => {
     const def = UNIT_DEFS[t];
     return !def.faction || def.faction === faction;
   });
 }
+
+const FACTION_LABEL_MAP: Record<string, string> = {
+  terran: '테란',
+  zerg: '저그',
+  protoss: '프로토스',
+  tal_darim: '탈다림',
+  primal_zerg: '원시저그',
+  nerazim: '네라짐',
+};
 
 export default function SidePanel({
   state,
@@ -55,8 +71,7 @@ export default function SidePanel({
     ally: '🤝 동맹', neutral: '⚪ 중립', war: '⚔ 전쟁',
   };
 
-  const factionLabel = (f: string) =>
-    f === 'terran' ? '테란' : f === 'zerg' ? '저그' : '프로토스';
+  const factionLabel = (f: string) => FACTION_LABEL_MAP[f] ?? f;
 
   if (!me) return null;
 
@@ -66,11 +81,9 @@ export default function SidePanel({
   const maxAffordable = Math.floor(me.minerals / actualCost);
   const safeCount = Math.min(recruitCount, maxAffordable);
 
-  // Display: for zerg zergling, show ×2 bonus
   const actualRecruited = (me.faction === 'zerg' && selectedDef.zergDouble) ? safeCount * 2 : safeCount;
 
   function openRecruit(id: number) {
-    // Default to first affordable unit
     const affordable = myUnits.find((u) => UNIT_DEFS[u].cost <= me.minerals) ?? myUnits[0];
     setRecruitUnitType(affordable);
     setRecruitCount(1);
@@ -84,6 +97,41 @@ export default function SidePanel({
 
   const totalMyUnits = myTerritories.reduce((s, t) => s + totalCount(t.units), 0);
   const totalMyAtk   = myTerritories.reduce((s, t) => s + totalAttack(t.units), 0);
+
+  // Categorize available units into ground / air / structure
+  const groundUnits    = myUnits.filter((ut) => !UNIT_DEFS[ut].isAir && !UNIT_DEFS[ut].isStructure);
+  const airUnits       = myUnits.filter((ut) => UNIT_DEFS[ut].isAir);
+  const structureUnits = myUnits.filter((ut) => UNIT_DEFS[ut].isStructure);
+
+  function renderUnitButton(ut: UnitType) {
+    const d = UNIT_DEFS[ut];
+    const isSelected = ut === recruitUnitType;
+    const canAfford = d.cost <= me.minerals;
+    return (
+      <button
+        key={ut}
+        onClick={() => handleUnitTypeChange(ut)}
+        style={{
+          padding: '3px 7px',
+          fontSize: 11,
+          border: isSelected ? '2px solid #7df' : '1px solid #555',
+          borderRadius: 4,
+          background: isSelected ? '#1a3a4a' : '#1e1e2e',
+          color: canAfford ? '#eee' : '#666',
+          cursor: canAfford ? 'pointer' : 'default',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 2,
+        }}
+      >
+        {d.isAir && <span style={{ fontSize: 10 }}>✈</span>}
+        {d.isStructure && <span style={{ fontSize: 10 }}>🏗</span>}
+        {d.name}
+        <span style={{ color: '#7df', marginLeft: 4 }}>{d.cost}💎</span>
+        {d.zergDouble && <span style={{ color: '#f7a', marginLeft: 2 }}>×2</span>}
+      </button>
+    );
+  }
 
   return (
     <div className="side-panel">
@@ -185,35 +233,37 @@ export default function SidePanel({
                       {state.territories[recruitId]?.name} 징집
                     </div>
 
-                    {/* Unit type selector */}
+                    {/* Unit type selector — grouped by category */}
                     <div style={{ marginBottom: 8 }}>
                       <div style={{ fontSize: 11, color: '#aaa', marginBottom: 4 }}>유닛 선택:</div>
-                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
-                        {myUnits.map((ut) => {
-                          const d = UNIT_DEFS[ut];
-                          const isSelected = ut === recruitUnitType;
-                          const canAfford = d.cost <= me.minerals;
-                          return (
-                            <button
-                              key={ut}
-                              onClick={() => handleUnitTypeChange(ut)}
-                              style={{
-                                padding: '3px 7px',
-                                fontSize: 11,
-                                border: isSelected ? '2px solid #7df' : '1px solid #555',
-                                borderRadius: 4,
-                                background: isSelected ? '#1a3a4a' : '#1e1e2e',
-                                color: canAfford ? '#eee' : '#666',
-                                cursor: canAfford ? 'pointer' : 'default',
-                              }}
-                            >
-                              {d.name}
-                              <span style={{ color: '#7df', marginLeft: 4 }}>{d.cost}💎</span>
-                              {d.zergDouble && <span style={{ color: '#f7a', marginLeft: 2 }}>×2</span>}
-                            </button>
-                          );
-                        })}
-                      </div>
+
+                      {groundUnits.length > 0 && (
+                        <div style={{ marginBottom: 6 }}>
+                          <div style={{ fontSize: 10, color: '#888', marginBottom: 3 }}>🗡 지상</div>
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                            {groundUnits.map(renderUnitButton)}
+                          </div>
+                        </div>
+                      )}
+
+                      {airUnits.length > 0 && (
+                        <div style={{ marginBottom: 6 }}>
+                          <div style={{ fontSize: 10, color: '#888', marginBottom: 3 }}>✈ 공중</div>
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                            {airUnits.map(renderUnitButton)}
+                          </div>
+                        </div>
+                      )}
+
+                      {structureUnits.length > 0 && (
+                        <div style={{ marginBottom: 6 }}>
+                          <div style={{ fontSize: 10, color: '#888', marginBottom: 3 }}>🏗 건물</div>
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                            {structureUnits.map(renderUnitButton)}
+                          </div>
+                        </div>
+                      )}
+
                       {selectedDef.special && (
                         <div style={{ fontSize: 10, color: '#aaa', marginTop: 4, fontStyle: 'italic' }}>
                           {selectedDef.special}
@@ -221,6 +271,7 @@ export default function SidePanel({
                       )}
                       <div style={{ fontSize: 11, color: '#ccc', marginTop: 4 }}>
                         ⚔{selectedDef.attack} / 🛡{selectedDef.defense} &nbsp;|&nbsp; 비용 {selectedDef.cost}💎/기
+                        {selectedDef.antiAir && <span style={{ color: '#adf', marginLeft: 6 }}>대공</span>}
                       </div>
                     </div>
 

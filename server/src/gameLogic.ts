@@ -15,6 +15,11 @@ export function totalCount(units: UnitCount[]): number {
   return units.reduce((s, u) => s + u.count, 0);
 }
 
+/** Count of non-structure units (units that can potentially move). */
+export function movableCount(units: UnitCount[]): number {
+  return units.reduce((s, u) => s + (UNIT_DEFS[u.type].isStructure ? 0 : u.count), 0);
+}
+
 function mergeUnits(target: UnitCount[], incoming: UnitCount[]): void {
   for (const inc of incoming) {
     const existing = target.find((u) => u.type === inc.type);
@@ -48,29 +53,40 @@ function trimToStrength(units: UnitCount[], targetStr: number, mode: 'attack' | 
   return result.filter((u) => u.count > 0);
 }
 
-/** Units that move out (all except 1 cheapest left behind). */
+/**
+ * Units that move out — all non-structure units, minus 1 cheapest non-structure left behind.
+ * Structures NEVER move.
+ */
 function movingUnits(units: UnitCount[]): UnitCount[] {
-  if (totalCount(units) <= 1) return [];
-  const result = deepUnits(units);
+  const nonStructures = units.filter((u) => !UNIT_DEFS[u.type].isStructure);
+  if (totalCount(nonStructures) <= 1) return [];
+  const result = deepUnits(nonStructures);
   const cheapestType = [...result].sort((a, b) => UNIT_DEFS[a.type].cost - UNIT_DEFS[b.type].cost)[0].type;
   const entry = result.find((u) => u.type === cheapestType)!;
   entry.count -= 1;
   return result.filter((u) => u.count > 0);
 }
 
-/** 1 cheapest unit that stays behind. */
+/**
+ * Units that always stay behind: all structures + 1 cheapest non-structure unit.
+ */
 function stayingUnit(units: UnitCount[]): UnitCount[] {
-  if (units.length === 0) return [{ type: 'infantry', count: 1 }];
-  const cheapest = [...units].sort((a, b) => UNIT_DEFS[a.type].cost - UNIT_DEFS[b.type].cost)[0];
-  return [{ type: cheapest.type, count: 1 }];
+  const structures = deepUnits(units.filter((u) => UNIT_DEFS[u.type].isStructure));
+  const nonStructures = units.filter((u) => !UNIT_DEFS[u.type].isStructure);
+  if (nonStructures.length === 0) return structures;
+  const cheapest = [...nonStructures].sort((a, b) => UNIT_DEFS[a.type].cost - UNIT_DEFS[b.type].cost)[0];
+  return [...structures, { type: cheapest.type, count: 1 }];
 }
 
 // ── Init ────────────────────────────────────────────────────────────────────
 
 const FACTION_START_UNITS: Record<string, UnitCount[]> = {
-  terran:  [{ type: 'infantry', count: 2 }, { type: 'marine', count: 1 }],
-  zerg:    [{ type: 'zergling', count: 4 }],
-  protoss: [{ type: 'infantry', count: 1 }, { type: 'zealot', count: 1 }],
+  terran:      [{ type: 'infantry', count: 2 }, { type: 'marine', count: 1 }],
+  zerg:        [{ type: 'zergling', count: 4 }],
+  protoss:     [{ type: 'infantry', count: 1 }, { type: 'zealot', count: 1 }],
+  tal_darim:   [{ type: 'infantry', count: 1 }, { type: 'fanatical', count: 1 }],
+  primal_zerg: [{ type: 'primal_zergling', count: 3 }],
+  nerazim:     [{ type: 'infantry', count: 1 }, { type: 'dark_templar', count: 1 }],
 };
 
 export function createInitialState(playerSetups: PlayerSetup[]): GameState {
@@ -95,7 +111,9 @@ export function createInitialState(playerSetups: PlayerSetup[]): GameState {
   for (let i = 0; i < playerSetups.length; i++) {
     const tid = PLAYER_STARTS[i];
     territories[tid].ownerId = i;
-    territories[tid].units = deepUnits(FACTION_START_UNITS[playerSetups[i].faction] || [{ type: 'infantry', count: 3 }]);
+    territories[tid].units = deepUnits(
+      FACTION_START_UNITS[playerSetups[i].faction] || [{ type: 'infantry', count: 3 }]
+    );
   }
 
   return {
@@ -122,7 +140,7 @@ export function canMoveTo(
   const to = territories[toId];
   if (!from.adjacentIds.includes(toId)) return false;
   if (from.ownerId !== pid) return false;
-  if (totalCount(from.units) < 2) return false;
+  if (movableCount(from.units) < 2) return false;
   if (to.ownerId === null || to.ownerId === pid) return true;
   return players[pid].diplomacy[to.ownerId] !== 'ally';
 }
@@ -154,18 +172,28 @@ export function moveArmies(state: GameState, fromId: number, toId: number): Game
   from.units = stayingUnit(from.units);
 
   if (to.ownerId === null || to.ownerId === pid) {
-    // Move into neutral or own territory
+    // Move/reinforce neutral or own territory
     to.ownerId = pid;
     mergeUnits(to.units, moving);
     log.push(`${players[pid].name}: ${from.name} → ${to.name} (⚔${totalAttack(moving)})`);
   } else {
-    // Attack
+    // ── Attack ───────────────────────────────────────────────────────────
     const defender = to.ownerId;
     const atkStr = totalAttack(moving);
-    const defStr = totalDefense(to.units);
+
+    // Air defenders only count if attacker has anti-air or air-to-air capability.
+    // Structures always defend. Ground always defends.
+    const hasAntiAir = moving.some((u) => UNIT_DEFS[u.type].antiAir || UNIT_DEFS[u.type].isAir);
+
+    const defStr = to.units.reduce((s, u) => {
+      const def = UNIT_DEFS[u.type];
+      if (def.isStructure) return s + def.defense;          // 건물: 항상 수비
+      if (def.isAir)       return hasAntiAir ? s + def.defense : s; // 공중: 대공 없으면 무시
+      return s + def.defense;                                // 지상: 항상 수비
+    }, 0);
 
     if (atkStr > defStr) {
-      // Attacker wins — keep strength equal to (atkStr - defStr)
+      // Attacker wins — survivors trimmed to (atkStr - defStr)
       const remaining = Math.max(0, atkStr - defStr);
       const survivors = remaining > 0 ? trimToStrength(moving, remaining, 'attack') : [];
       to.ownerId = pid;
@@ -174,9 +202,21 @@ export function moveArmies(state: GameState, fromId: number, toId: number): Game
       players[pid].diplomacy[defender] = 'war';
       players[defender].diplomacy[pid] = 'war';
     } else {
-      // Defender wins — keep strength equal to (defStr - atkStr)
+      // Defender wins — only "active" defenders take casualties; immune air units survive intact
       const remaining = Math.max(0, defStr - atkStr);
-      to.units = remaining > 0 ? trimToStrength(to.units, remaining, 'defense') : [{ type: 'infantry', count: 1 }];
+
+      const activeDefenders = to.units.filter((u) => {
+        const def = UNIT_DEFS[u.type];
+        if (def.isStructure) return true;
+        if (def.isAir)       return hasAntiAir;
+        return true;
+      });
+      const immuneAir = deepUnits(to.units.filter((u) => UNIT_DEFS[u.type].isAir && !hasAntiAir));
+
+      const trimmed = remaining > 0
+        ? trimToStrength(activeDefenders, remaining, 'defense')
+        : [{ type: 'infantry' as UnitType, count: 1 }];
+      to.units = [...trimmed, ...immuneAir];
       log.push(`🛡 ${to.name} 방어 성공! (DEF ${defStr} vs ATK ${atkStr})`);
     }
   }
@@ -243,7 +283,7 @@ export function endTurn(state: GameState): GameState {
   const log = [...state.log];
   const cur = state.currentPlayerId;
 
-  // Collect income
+  // Collect mineral income
   let income = 0;
   for (const t of territories) {
     if (t.ownerId === cur) income += t.minerals;
@@ -254,6 +294,12 @@ export function endTurn(state: GameState): GameState {
   if (players[cur].faction === 'zerg') {
     for (const t of territories) {
       if (t.ownerId === cur) mergeUnits(t.units, [{ type: 'zergling', count: 1 }]);
+    }
+  }
+  // Primal Zerg: spawn 1 primal_zergling per owned territory (stronger regen)
+  if (players[cur].faction === 'primal_zerg') {
+    for (const t of territories) {
+      if (t.ownerId === cur) mergeUnits(t.units, [{ type: 'primal_zergling', count: 1 }]);
     }
   }
 

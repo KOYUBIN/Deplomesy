@@ -11,6 +11,7 @@ interface Props {
 
 const FACTION_LABELS: Record<string, string> = {
   terran: '테란', zerg: '저그', protoss: '프로토스',
+  tal_darim: '탈다림', primal_zerg: '원시저그', nerazim: '네라짐',
 };
 
 export default function WaitingRoom({ roomInfo, myPlayerIndex, isHost, onStartGame }: Props) {

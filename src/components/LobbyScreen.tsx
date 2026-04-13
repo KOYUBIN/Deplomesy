@@ -9,10 +9,37 @@ interface Props {
   isConnecting: boolean;
 }
 
-const FACTION_INFO: Record<Faction, { label: string; desc: string }> = {
-  terran:  { label: '테란',     desc: '방어 +1. 인류의 생존자들.' },
-  zerg:    { label: '저그',     desc: '턴마다 자동 재생. 군집의 의지.' },
-  protoss: { label: '프로토스', desc: '공격 +1. 고대 문명의 수호자.' },
+const FACTION_INFO: Record<Faction, { label: string; desc: string; units: string }> = {
+  terran: {
+    label: '테란 도미니온',
+    desc: '방어 요새화. 벙커·탱크로 진지를 구축.',
+    units: '해병·시즈탱크·바이킹·벙커',
+  },
+  zerg: {
+    label: '저그 군단',
+    desc: '무한 재생. 저글링 ×2 생산, 매 턴 자동 보충.',
+    units: '저글링·히드라·뮤탈·가시기어',
+  },
+  protoss: {
+    label: '황금함대',
+    desc: '균형의 종족. 강력한 특수부대와 광자포.',
+    units: '질럿·드라군·불사조·광자포',
+  },
+  tal_darim: {
+    label: '탈다림',
+    desc: '광신도 집단. 공허 광선과 광신도의 폭격.',
+    units: '광신도·집정관·보이드레이·신전탑',
+  },
+  primal_zerg: {
+    label: '원시저그',
+    desc: '진화의 끝. 강화 유닛과 자동 보충.',
+    units: '원시저글링·맹금·리바이어던·원시굴',
+  },
+  nerazim: {
+    label: '네라짐',
+    desc: '암흑의 날. 암흑 기사 기습과 공허 방어.',
+    units: '암흑기사·추적자·예언자·공허신전',
+  },
 };
 
 export default function LobbyScreen({ onCreateRoom, onJoinRoom, error, isConnecting }: Props) {
@@ -67,6 +94,7 @@ export default function LobbyScreen({ onCreateRoom, onJoinRoom, error, isConnect
                   >
                     <span className="faction-name">{FACTION_INFO[f].label}</span>
                     <span className="faction-desc">{FACTION_INFO[f].desc}</span>
+                    <span className="faction-units">{FACTION_INFO[f].units}</span>
                   </button>
                 ))}
               </div>
@@ -111,9 +139,9 @@ export default function LobbyScreen({ onCreateRoom, onJoinRoom, error, isConnect
           <ul>
             <li>🗺 19개 행성 중 <strong>11개</strong> 이상 점령 시 승리</li>
             <li>⚔ 인접 행성 클릭으로 공격·이동</li>
-            <li>💎 미네랄 수집 → 군대 징집 (2미네랄 = 1군)</li>
+            <li>💎 미네랄 수집 → 군대 징집</li>
             <li>🤝 동맹 · ⚪ 중립 · 🔴 전쟁 선택 가능</li>
-            <li>테란 방어+1 / 저그 재생 / 프로토스 공격+1</li>
+            <li>6개 종족: 테란·저그·프로토스·탈다림·원시저그·네라짐 — 각 종족마다 고유 유닛과 특수 능력 보유</li>
           </ul>
         </div>
       </div>

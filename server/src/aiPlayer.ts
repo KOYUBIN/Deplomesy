@@ -1,6 +1,6 @@
 import type { GameState, Territory, UnitType, Faction } from './types';
 import { UNIT_DEFS } from './mapData';
-import { moveArmies, recruitUnits, setDiplomacy, endTurn, canMoveTo, totalAttack, totalDefense, totalCount } from './gameLogic';
+import { moveArmies, recruitUnits, setDiplomacy, endTurn, canMoveTo, totalAttack, totalDefense, totalCount, movableCount } from './gameLogic';
 
 function sleep(ms: number) {
   return new Promise<void>((res) => setTimeout(res, ms));
@@ -9,11 +9,13 @@ function sleep(ms: number) {
 // ── Unit selection ───────────────────────────────────────────────────────────
 
 function bestUnitToBuy(faction: Faction, minerals: number): UnitType | null {
-  // Priority order per faction (most powerful affordable first)
   const prio: Record<Faction, UnitType[]> = {
-    terran:  ['siege_tank', 'marine', 'archer', 'infantry'],
-    zerg:    ['hydralisk', 'zergling', 'archer', 'infantry'],
-    protoss: ['dragoon', 'zealot', 'archer', 'infantry'],
+    terran:      ['siege_tank', 'viking', 'marine', 'bunker', 'archer', 'infantry'],
+    zerg:        ['hydralisk', 'mutalisk', 'zergling', 'spine_crawler', 'archer', 'infantry'],
+    protoss:     ['dragoon', 'phoenix', 'zealot', 'photon_cannon', 'archer', 'infantry'],
+    tal_darim:   ['void_ray', 'fanatical', 'tal_archon', 'xel_naga_tower', 'archer', 'infantry'],
+    primal_zerg: ['leviathan', 'primal_raptor', 'primal_zergling', 'primal_pit', 'archer', 'infantry'],
+    nerazim:     ['dark_templar', 'stalker', 'oracle', 'void_gate', 'archer', 'infantry'],
   };
 
   for (const type of prio[faction]) {
@@ -31,12 +33,11 @@ function getBestAttack(state: GameState, pid: number): { fromId: number; toId: n
   let bestScore = -Infinity;
   let best: { fromId: number; toId: number } | null = null;
 
-  for (const from of territories.filter((t) => t.ownerId === pid && totalCount(t.units) >= 2)) {
+  for (const from of territories.filter((t) => t.ownerId === pid && movableCount(t.units) >= 2)) {
     for (const toId of from.adjacentIds) {
       if (!canMoveTo(territories, players, from.id, toId, pid)) continue;
       const to = territories[toId];
       if (to.ownerId === pid) continue;
-      // Score: minerals + weak defense = attractive target
       const score = to.minerals * 2 - totalDefense(to.units) + (to.ownerId === null ? 2 : 0);
       if (score > bestScore) { bestScore = score; best = { fromId: from.id, toId }; }
     }
@@ -46,8 +47,7 @@ function getBestAttack(state: GameState, pid: number): { fromId: number; toId: n
 
 function getBestReinforce(state: GameState, pid: number): { fromId: number; toId: number } | null {
   const { territories } = state;
-  for (const from of territories.filter((t) => t.ownerId === pid && totalCount(t.units) >= 2)) {
-    // Is this territory fully safe?
+  for (const from of territories.filter((t) => t.ownerId === pid && movableCount(t.units) >= 2)) {
     const allSafe = from.adjacentIds.every((adjId) => {
       const adj = territories[adjId];
       return adj.ownerId === null || adj.ownerId === pid ||
