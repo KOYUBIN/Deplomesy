@@ -447,8 +447,9 @@ html, body, #root {
   box-shadow: 0 0 12px color-mix(in srgb, var(--faction-color, var(--accent)) 40%, transparent);
 }
 
-.faction-name { font-size: 14px; font-weight: bold; color: var(--faction-color, var(--text)); }
-.faction-desc { font-size: 10px; color: var(--text-dim); line-height: 1.4; }
+.faction-name  { font-size: 14px; font-weight: bold; color: var(--faction-color, var(--text)); }
+.faction-desc  { font-size: 10px; color: var(--text-dim); line-height: 1.4; }
+.faction-units { font-size: 9px;  color: #778; margin-top: 2px; }
 
 /* Count grid */
 .count-grid {

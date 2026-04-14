@@ -1,0 +1,28 @@
+{
+  "name": "Deplomesy - StarCraft Diplomacy",
+  "image": "mcr.microsoft.com/devcontainers/javascript-node:20",
+
+  "forwardPorts": [3001],
+  "portsAttributes": {
+    "3001": {
+      "label": "디플로메시 게임 (Socket.io + Vite)",
+      "onAutoForward": "openBrowser",
+      "visibility": "public"
+    }
+  },
+
+  "postCreateCommand": "npm install && npm run server:build",
+  "postStartCommand": "npm run dev:all",
+
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "dbaeumer.vscode-eslint",
+        "esbenp.prettier-vscode"
+      ],
+      "settings": {
+        "terminal.integrated.defaultProfile.linux": "bash"
+      }
+    }
+  }
+}

@@ -1,5 +1,6 @@
 import React from 'react';
-import type { GameState, Territory, ClientUIState } from '../types';
+import type { GameState, Territory, ClientUIState, UnitCount } from '../types';
+import { UNIT_DEFS } from '../mapData';
 
 const TERRITORY_RADIUS = 36;
 const NEUTRAL_COLOR = '#444';
@@ -10,6 +11,18 @@ interface Props {
   myPlayerIndex: number;
   isMyTurn: boolean;
   onTerritoryClick: (id: number) => void;
+}
+
+function totalCount(units: UnitCount[]): number {
+  return units.reduce((s, u) => s + u.count, 0);
+}
+
+function totalAttack(units: UnitCount[]): number {
+  return units.reduce((s, u) => s + UNIT_DEFS[u.type].attack * u.count, 0);
+}
+
+function totalDefense(units: UnitCount[]): number {
+  return units.reduce((s, u) => s + UNIT_DEFS[u.type].defense * u.count, 0);
 }
 
 function getTerritoryColor(territory: Territory, state: GameState): string {
@@ -28,7 +41,7 @@ function canMoveTo(
   const to = territories[toId];
   if (!from.adjacentIds.includes(toId)) return false;
   if (from.ownerId !== pid) return false;
-  if (from.armies < 2) return false;
+  if (totalCount(from.units) < 2) return false;
   if (to.ownerId === null || to.ownerId === pid) return true;
   return players[pid].diplomacy[to.ownerId] !== 'ally';
 }
@@ -96,6 +109,9 @@ export default function GameMap({ state, uiState, myPlayerIndex, isMyTurn, onTer
         const isOwned = t.ownerId === myPlayerIndex;
         const color = getTerritoryColor(t, state);
         const clickable = isMyTurn && (isOwned || isTarget);
+        const count = totalCount(t.units);
+        const atk = totalAttack(t.units);
+        const def = totalDefense(t.units);
 
         return (
           <g
@@ -104,7 +120,7 @@ export default function GameMap({ state, uiState, myPlayerIndex, isMyTurn, onTer
             onClick={() => clickable && onTerritoryClick(t.id)}
             tabIndex={clickable ? 0 : -1}
             role={clickable ? 'button' : undefined}
-            aria-label={`${t.name}: 군대 ${t.armies}${t.ownerId !== null ? `, 소유: ${players[t.ownerId]?.name}` : ' (중립)'}`}
+            aria-label={`${t.name}: ${count}기 ATK${atk}/DEF${def}${t.ownerId !== null ? `, 소유: ${players[t.ownerId]?.name}` : ' (중립)'}`}
             onKeyDown={(e) => e.key === 'Enter' && clickable && onTerritoryClick(t.id)}
           >
             {/* Selection ring */}
@@ -129,20 +145,30 @@ export default function GameMap({ state, uiState, myPlayerIndex, isMyTurn, onTer
             />
 
             {/* Name */}
-            <text x={t.x} y={t.y - 10} textAnchor="middle"
+            <text x={t.x} y={t.y - 13} textAnchor="middle"
               fill="#fff" fontSize={9.5} fontWeight="bold" fontFamily="monospace"
               style={{ pointerEvents: 'none', userSelect: 'none' }}
             >
               {t.name}
             </text>
 
-            {/* Army count */}
-            <text x={t.x} y={t.y + 7} textAnchor="middle"
-              fill="#fff" fontSize={15} fontWeight="bold" fontFamily="monospace"
+            {/* Unit count */}
+            <text x={t.x} y={t.y + 4} textAnchor="middle"
+              fill="#fff" fontSize={14} fontWeight="bold" fontFamily="monospace"
               style={{ pointerEvents: 'none', userSelect: 'none' }}
             >
-              {t.armies}
+              {count > 0 ? count : ''}
             </text>
+
+            {/* ATK / DEF */}
+            {count > 0 && (
+              <text x={t.x} y={t.y + 16} textAnchor="middle"
+                fill="#ffdd88" fontSize={8} fontFamily="monospace"
+                style={{ pointerEvents: 'none', userSelect: 'none' }}
+              >
+                ⚔{atk} 🛡{def}
+              </text>
+            )}
 
             {/* Mineral dots */}
             <text

@@ -1,21 +1,47 @@
-import type { GameState, Territory } from './types';
-import { moveArmies, recruitArmies, setDiplomacy, endTurn, canMoveTo } from './gameLogic';
+import type { GameState, Territory, UnitType, Faction } from './types';
+import { UNIT_DEFS } from './mapData';
+import { moveArmies, recruitUnits, setDiplomacy, endTurn, canMoveTo, totalAttack, totalDefense, totalCount, movableCount } from './gameLogic';
 
 function sleep(ms: number) {
   return new Promise<void>((res) => setTimeout(res, ms));
 }
+
+// ── Unit selection ───────────────────────────────────────────────────────────
+
+function bestUnitToBuy(faction: Faction, minerals: number): UnitType | null {
+  const prio: Record<Faction, UnitType[]> = {
+    terran:      ['siege_tank', 'viking', 'marine', 'bunker', 'archer', 'infantry'],
+    zerg:        ['hydralisk', 'mutalisk', 'zergling', 'spine_crawler', 'archer', 'infantry'],
+    protoss:     ['dragoon', 'phoenix', 'zealot', 'photon_cannon', 'archer', 'infantry'],
+    tal_darim:   ['void_ray', 'fanatical', 'tal_archon', 'xel_naga_tower', 'archer', 'infantry'],
+    primal_zerg: ['leviathan', 'primal_raptor', 'primal_zergling', 'primal_pit', 'archer', 'infantry'],
+    nerazim:     ['dark_templar', 'stalker', 'oracle', 'void_gate', 'archer', 'infantry'],
+    ued:         ['battlecruiser', 'ghost', 'science_vessel', 'missile_turret', 'archer', 'infantry'],
+    raiders:     ['firebat', 'vulture', 'dropship', 'raiders_bunker', 'archer', 'infantry'],
+    confederacy: ['goliath', 'wraith', 'confederate_ghost', 'nuke_silo', 'archer', 'infantry'],
+  };
+
+  for (const type of prio[faction]) {
+    const def = UNIT_DEFS[type];
+    if (def.faction && def.faction !== faction) continue;
+    if (def.cost <= minerals) return type;
+  }
+  return null;
+}
+
+// ── Move selection ───────────────────────────────────────────────────────────
 
 function getBestAttack(state: GameState, pid: number): { fromId: number; toId: number } | null {
   const { territories, players } = state;
   let bestScore = -Infinity;
   let best: { fromId: number; toId: number } | null = null;
 
-  for (const from of territories.filter((t) => t.ownerId === pid && t.armies >= 2)) {
+  for (const from of territories.filter((t) => t.ownerId === pid && movableCount(t.units) >= 2)) {
     for (const toId of from.adjacentIds) {
       if (!canMoveTo(territories, players, from.id, toId, pid)) continue;
       const to = territories[toId];
       if (to.ownerId === pid) continue;
-      const score = to.minerals * 2 - to.armies + (to.ownerId === null ? 1 : 0);
+      const score = to.minerals * 2 - totalDefense(to.units) + (to.ownerId === null ? 2 : 0);
       if (score > bestScore) { bestScore = score; best = { fromId: from.id, toId }; }
     }
   }
@@ -24,13 +50,14 @@ function getBestAttack(state: GameState, pid: number): { fromId: number; toId: n
 
 function getBestReinforce(state: GameState, pid: number): { fromId: number; toId: number } | null {
   const { territories } = state;
-  for (const from of territories.filter((t) => t.ownerId === pid && t.armies >= 2)) {
+  for (const from of territories.filter((t) => t.ownerId === pid && movableCount(t.units) >= 2)) {
     const allSafe = from.adjacentIds.every((adjId) => {
       const adj = territories[adjId];
       return adj.ownerId === null || adj.ownerId === pid ||
         state.players[pid].diplomacy[adj.ownerId] === 'ally';
     });
     if (!allSafe) continue;
+
     for (const toId of from.adjacentIds) {
       const to = territories[toId];
       if (to.ownerId !== pid) continue;
@@ -61,12 +88,12 @@ function getDiplomacyAction(
   const strongest = ranked[0];
   const weakest = ranked[ranked.length - 1];
 
-  if (strongest.count > myCount && players[pid].diplomacy[strongest.p.id] !== 'war' && Math.random() < 0.3) {
+  if (strongest.count > myCount && players[pid].diplomacy[strongest.p.id] !== 'war' && Math.random() < 0.3)
     return { targetId: strongest.p.id, status: 'war' };
-  }
-  if (weakest.p.id !== strongest.p.id && players[pid].diplomacy[weakest.p.id] === 'neutral' && Math.random() < 0.4) {
+
+  if (weakest.p.id !== strongest.p.id && players[pid].diplomacy[weakest.p.id] === 'neutral' && Math.random() < 0.35)
     return { targetId: weakest.p.id, status: 'ally' };
-  }
+
   return null;
 }
 
@@ -82,8 +109,10 @@ function getBestRecruitTerritory(state: GameState, pid: number): Territory | nul
     }).length;
     if (enemyAdj > maxScore) { maxScore = enemyAdj; best = t; }
   }
-  return best;
+  return best ?? (myTerrs.length > 0 ? myTerrs[0] : null);
 }
+
+// ── Main AI loop ─────────────────────────────────────────────────────────────
 
 export async function runAITurns(
   state: GameState,
@@ -94,21 +123,27 @@ export async function runAITurns(
   while (s.phase === 'playing' && s.players[s.currentPlayerId].isAI) {
     await sleep(350);
     const pid = s.currentPlayerId;
+    const faction = s.players[pid].faction;
 
-    // Diplomacy
+    // 1. Diplomacy
     const dip = getDiplomacyAction(s, pid);
     if (dip) s = setDiplomacy(s, dip.targetId, dip.status);
 
-    // Recruit
-    const canRecruit = Math.floor(s.players[pid].minerals / 2);
-    if (canRecruit > 0) {
-      const t = getBestRecruitTerritory(s, pid);
-      if (t) s = recruitArmies(s, t.id, canRecruit);
+    // 2. Recruit best available units
+    const recruitTerritory = getBestRecruitTerritory(s, pid);
+    if (recruitTerritory) {
+      let minerals = s.players[pid].minerals;
+      while (minerals >= 1) {
+        const unitType = bestUnitToBuy(faction, minerals);
+        if (!unitType) break;
+        s = recruitUnits(s, recruitTerritory.id, unitType, 1);
+        minerals = s.players[pid].minerals;
+      }
     }
 
     await sleep(200);
 
-    // Move/Attack
+    // 3. Attack or reinforce
     const attack = getBestAttack(s, pid);
     if (attack) {
       s = moveArmies(s, attack.fromId, attack.toId);
@@ -117,7 +152,7 @@ export async function runAITurns(
       if (reinforce) s = moveArmies(s, reinforce.fromId, reinforce.toId);
     }
 
-    await sleep(250);
+    await sleep(300);
     s = endTurn(s);
     onUpdate({ ...s });
   }
