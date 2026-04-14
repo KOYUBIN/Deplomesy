@@ -16,6 +16,9 @@ function bestUnitToBuy(faction: Faction, minerals: number): UnitType | null {
     tal_darim:   ['void_ray', 'fanatical', 'tal_archon', 'xel_naga_tower', 'archer', 'infantry'],
     primal_zerg: ['leviathan', 'primal_raptor', 'primal_zergling', 'primal_pit', 'archer', 'infantry'],
     nerazim:     ['dark_templar', 'stalker', 'oracle', 'void_gate', 'archer', 'infantry'],
+    ued:         ['battlecruiser', 'ghost', 'science_vessel', 'missile_turret', 'archer', 'infantry'],
+    raiders:     ['firebat', 'vulture', 'dropship', 'raiders_bunker', 'archer', 'infantry'],
+    confederacy: ['goliath', 'wraith', 'confederate_ghost', 'nuke_silo', 'archer', 'infantry'],
   };
 
   for (const type of prio[faction]) {

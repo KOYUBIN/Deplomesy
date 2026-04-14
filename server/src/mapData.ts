@@ -136,6 +136,70 @@ export const UNIT_DEFS: Record<UnitType, UnitDef> = {
     isStructure: true, antiAir: true,
     special: '네라짐 방어 신전. 대공 방어 가능.',
   },
+
+  // UED 지구 연합
+  ghost: {
+    type: 'ghost', name: '고스트', attack: 3, defense: 1, cost: 4, faction: 'ued',
+    antiAir: true,
+    special: '지구 최정예 저격수. 잠입·대공 요격 가능.',
+  },
+  battlecruiser: {
+    type: 'battlecruiser', name: '전투순양함', attack: 5, defense: 3, cost: 6, faction: 'ued',
+    isAir: true,
+    special: '야마토 포 장착 초대형 전함. 압도적 화력.',
+  },
+  science_vessel: {
+    type: 'science_vessel', name: '사이언스 베슬', attack: 1, defense: 3, cost: 4, faction: 'ued',
+    isAir: true, antiAir: true,
+    special: 'EMP 방출·방어 지원. 아군 강화 공중함.',
+  },
+  missile_turret: {
+    type: 'missile_turret', name: '미사일 포탑', attack: 1, defense: 4, cost: 3, faction: 'ued',
+    isStructure: true, antiAir: true,
+    special: '대공 방어 포탑. 공중 유닛 격파 특화.',
+  },
+
+  // 레이너 반군
+  vulture: {
+    type: 'vulture', name: '벌처', attack: 2, defense: 1, cost: 2, faction: 'raiders',
+    special: '고속 호버바이크. 지뢰 부설, 빠르고 저렴.',
+  },
+  firebat: {
+    type: 'firebat', name: '화염방사병', attack: 3, defense: 2, cost: 3, faction: 'raiders',
+    special: '근접 화염 전문가. 밀집 지상군 섬멸.',
+  },
+  dropship: {
+    type: 'dropship', name: '수송선', attack: 1, defense: 3, cost: 3, faction: 'raiders',
+    isAir: true,
+    special: '병력 수송 함선. 방어력 우수, 유틸리티 유닛.',
+  },
+  raiders_bunker: {
+    type: 'raiders_bunker', name: '임시 벙커', attack: 1, defense: 3, cost: 2, faction: 'raiders',
+    isStructure: true, antiAir: true,
+    special: '반군 임시 방어 진지. 저렴하고 빠른 구축.',
+  },
+
+  // 테란 컨페더러시
+  goliath: {
+    type: 'goliath', name: '골리앗', attack: 2, defense: 3, cost: 4, faction: 'confederacy',
+    antiAir: true,
+    special: '중장갑 보행 병기. 대공·대지 양용 포격.',
+  },
+  wraith: {
+    type: 'wraith', name: '레이스', attack: 3, defense: 1, cost: 3, faction: 'confederacy',
+    isAir: true, antiAir: true,
+    special: '클로킹 전투기. 빠르고 치명적, 방어는 취약.',
+  },
+  confederate_ghost: {
+    type: 'confederate_ghost', name: '연방 고스트', attack: 3, defense: 1, cost: 4, faction: 'confederacy',
+    antiAir: true,
+    special: '컨페더러시 핵 유도 요원. 핵 호출 전문.',
+  },
+  nuke_silo: {
+    type: 'nuke_silo', name: '핵 사일로', attack: 1, defense: 5, cost: 5, faction: 'confederacy',
+    isStructure: true, antiAir: true,
+    special: '핵탄두 격납 요새. 압도적 방어와 대공 제압.',
+  },
 };
 
 // ── Map ─────────────────────────────────────────────────────────────────────
@@ -170,14 +234,18 @@ export const PLAYER_COLORS = [
 ];
 
 export const AI_NAMES: Record<Faction, string[]> = {
-  terran:      ['짐 레이너', '아르투로 발레리우스', '맷 호너'],
+  terran:      ['발레리안 맹스크', '맷 호너', '아르트홀루스'],
   zerg:        ['케리건', '이자샤', '아바투르'],
   protoss:     ['아르타니스', '카락스', '피닉스'],
   tal_darim:   ['알락', '마라', '케란'],
   primal_zerg: ['데하카', '크라이스', '드로그'],
   nerazim:     ['제라툴', '라작칼', '보라지'],
+  ued:         ['듀갈 제독', '스투코프', '바렐라'],
+  raiders:     ['짐 레이너', '타이커스 핀들레이', '노바 테라'],
+  confederacy: ['에드먼드 듀크', '그린버그', '앤젤리나'],
 };
 
 export const AI_FACTIONS: Faction[] = [
   'terran', 'zerg', 'protoss', 'tal_darim', 'primal_zerg', 'nerazim',
+  'ued', 'raiders', 'confederacy',
 ];

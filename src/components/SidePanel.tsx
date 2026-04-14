@@ -33,6 +33,9 @@ function availableUnits(faction: string): UnitType[] {
     'fanatical', 'void_ray', 'tal_archon', 'xel_naga_tower',
     'primal_zergling', 'primal_raptor', 'leviathan', 'primal_pit',
     'dark_templar', 'stalker', 'oracle', 'void_gate',
+    'ghost', 'battlecruiser', 'science_vessel', 'missile_turret',
+    'vulture', 'firebat', 'dropship', 'raiders_bunker',
+    'goliath', 'wraith', 'confederate_ghost', 'nuke_silo',
   ];
   return all.filter((t) => {
     const def = UNIT_DEFS[t];
@@ -47,6 +50,9 @@ const FACTION_LABEL_MAP: Record<string, string> = {
   tal_darim: '탈다림',
   primal_zerg: '원시저그',
   nerazim: '네라짐',
+  ued: 'UED',
+  raiders: '레이너 반군',
+  confederacy: '컨페더러시',
 };
 
 export default function SidePanel({

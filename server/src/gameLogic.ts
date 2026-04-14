@@ -87,6 +87,9 @@ const FACTION_START_UNITS: Record<string, UnitCount[]> = {
   tal_darim:   [{ type: 'infantry', count: 1 }, { type: 'fanatical', count: 1 }],
   primal_zerg: [{ type: 'primal_zergling', count: 3 }],
   nerazim:     [{ type: 'infantry', count: 1 }, { type: 'dark_templar', count: 1 }],
+  ued:         [{ type: 'infantry', count: 2 }, { type: 'ghost', count: 1 }],
+  raiders:     [{ type: 'vulture', count: 2 }, { type: 'firebat', count: 1 }],
+  confederacy: [{ type: 'infantry', count: 2 }, { type: 'goliath', count: 1 }],
 };
 
 export function createInitialState(playerSetups: PlayerSetup[]): GameState {

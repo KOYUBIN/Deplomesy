@@ -40,6 +40,21 @@ const FACTION_INFO: Record<Faction, { label: string; desc: string; units: string
     desc: '암흑의 날. 암흑 기사 기습과 공허 방어.',
     units: '암흑기사·추적자·예언자·공허신전',
   },
+  ued: {
+    label: 'UED 지구 연합',
+    desc: '지구 최정예 군사력. 전투순양함과 고스트 요원.',
+    units: '고스트·전투순양함·사이언스베슬·미사일포탑',
+  },
+  raiders: {
+    label: '레이너 반군',
+    desc: '불굴의 반란군. 기동성과 근접 화력의 귀재.',
+    units: '벌처·화염방사병·수송선·임시벙커',
+  },
+  confederacy: {
+    label: '테란 컨페더러시',
+    desc: '구 정부의 위용. 핵 사일로와 중장갑 병기.',
+    units: '골리앗·레이스·연방고스트·핵사일로',
+  },
 };
 
 export default function LobbyScreen({ onCreateRoom, onJoinRoom, error, isConnecting }: Props) {

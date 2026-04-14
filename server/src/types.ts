@@ -1,6 +1,13 @@
 export type Faction =
-  | 'terran' | 'zerg' | 'protoss'
-  | 'tal_darim' | 'primal_zerg' | 'nerazim';
+  | 'terran'      // 테란 도미니온
+  | 'zerg'        // 저그 군단
+  | 'protoss'     // 황금함대 프로토스
+  | 'tal_darim'   // 탈다림
+  | 'primal_zerg' // 원시저그
+  | 'nerazim'     // 네라짐
+  | 'ued'         // UED 지구 연합
+  | 'raiders'     // 레이너 반군
+  | 'confederacy';// 테란 컨페더러시
 
 export type DiplomacyStatus = 'war' | 'neutral' | 'ally';
 export type GamePhase = 'setup' | 'playing' | 'ended';
@@ -19,7 +26,13 @@ export type UnitType =
   // 원시저그
   | 'primal_zergling' | 'primal_raptor' | 'leviathan' | 'primal_pit'
   // 네라짐
-  | 'dark_templar' | 'stalker' | 'oracle' | 'void_gate';
+  | 'dark_templar' | 'stalker' | 'oracle' | 'void_gate'
+  // UED 지구 연합
+  | 'ghost' | 'battlecruiser' | 'science_vessel' | 'missile_turret'
+  // 레이너 반군
+  | 'vulture' | 'firebat' | 'dropship' | 'raiders_bunker'
+  // 테란 컨페더러시
+  | 'goliath' | 'wraith' | 'confederate_ghost' | 'nuke_silo';
 
 export interface UnitDef {
   type: UnitType;
