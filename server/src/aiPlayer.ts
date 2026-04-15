@@ -1,6 +1,6 @@
 import type { GameState, Territory, UnitType, Faction } from './types';
-import { UNIT_DEFS } from './mapData';
-import { moveArmies, recruitUnits, setDiplomacy, endTurn, canMoveTo, totalAttack, totalDefense, totalCount, movableCount } from './gameLogic';
+import { UNIT_DEFS, TECH_DEFS } from './mapData';
+import { moveArmies, recruitUnits, setDiplomacy, endTurn, canMoveTo, totalAttack, totalDefense, totalCount, movableCount, supplyCap, usedSupply, researchTech } from './gameLogic';
 
 function sleep(ms: number) {
   return new Promise<void>((res) => setTimeout(res, ms));
@@ -8,23 +8,31 @@ function sleep(ms: number) {
 
 // ── Unit selection ───────────────────────────────────────────────────────────
 
-function bestUnitToBuy(faction: Faction, minerals: number): UnitType | null {
+function bestUnitToBuy(
+  faction: Faction,
+  minerals: number,
+  gas: number,
+  techs: string[]
+): UnitType | null {
   const prio: Record<Faction, UnitType[]> = {
     terran:      ['siege_tank', 'viking', 'marine', 'bunker', 'archer', 'infantry'],
     zerg:        ['hydralisk', 'mutalisk', 'zergling', 'spine_crawler', 'archer', 'infantry'],
     protoss:     ['dragoon', 'phoenix', 'zealot', 'photon_cannon', 'archer', 'infantry'],
-    tal_darim:   ['void_ray', 'fanatical', 'tal_archon', 'xel_naga_tower', 'archer', 'infantry'],
+    tal_darim:   ['void_ray', 'tal_archon', 'fanatical', 'xel_naga_tower', 'archer', 'infantry'],
     primal_zerg: ['leviathan', 'primal_raptor', 'primal_zergling', 'primal_pit', 'archer', 'infantry'],
-    nerazim:     ['dark_templar', 'stalker', 'oracle', 'void_gate', 'archer', 'infantry'],
-    ued:         ['battlecruiser', 'ghost', 'science_vessel', 'missile_turret', 'archer', 'infantry'],
-    raiders:     ['firebat', 'vulture', 'dropship', 'raiders_bunker', 'archer', 'infantry'],
-    confederacy: ['goliath', 'wraith', 'confederate_ghost', 'nuke_silo', 'archer', 'infantry'],
+    nerazim:     ['stalker', 'oracle', 'dark_templar', 'void_gate', 'archer', 'infantry'],
+    ued:         ['battlecruiser', 'science_vessel', 'ghost', 'missile_turret', 'archer', 'infantry'],
+    raiders:     ['firebat', 'dropship', 'vulture', 'raiders_bunker', 'archer', 'infantry'],
+    confederacy: ['wraith', 'confederate_ghost', 'goliath', 'nuke_silo', 'archer', 'infantry'],
   };
 
   for (const type of prio[faction]) {
     const def = UNIT_DEFS[type];
     if (def.faction && def.faction !== faction) continue;
-    if (def.cost <= minerals) return type;
+    if (def.cost > minerals) continue;
+    if ((def.gasCost ?? 0) > gas) continue;
+    if (def.requiredTech && !techs.includes(def.requiredTech)) continue;
+    return type;
   }
   return null;
 }
@@ -41,7 +49,7 @@ function getBestAttack(state: GameState, pid: number): { fromId: number; toId: n
       if (!canMoveTo(territories, players, from.id, toId, pid)) continue;
       const to = territories[toId];
       if (to.ownerId === pid) continue;
-      const score = to.minerals * 2 - totalDefense(to.units) + (to.ownerId === null ? 2 : 0);
+      const score = to.minerals * 2 + to.gasYield * 3 - totalDefense(to.units) + (to.ownerId === null ? 2 : 0);
       if (score > bestScore) { bestScore = score; best = { fromId: from.id, toId }; }
     }
   }
@@ -112,6 +120,31 @@ function getBestRecruitTerritory(state: GameState, pid: number): Territory | nul
   return best ?? (myTerrs.length > 0 ? myTerrs[0] : null);
 }
 
+// ── Bulk recruit count ───────────────────────────────────────────────────────
+
+/** How many units of `unitType` can the player afford right now (minerals, gas, supply)? */
+function maxAffordable(
+  territories: Territory[],
+  pid: number,
+  minerals: number,
+  gas: number,
+  unitType: UnitType,
+  faction: Faction
+): number {
+  const def = UNIT_DEFS[unitType];
+  const actual = (faction === 'zerg' && def.zergDouble) ? 2 : 1; // units per purchase
+  const supPerPurchase = (def.supply ?? 0) * actual;
+  const cap = supplyCap(territories, pid);
+  const used = usedSupply(territories, pid);
+  const supplyLeft = cap - used;
+
+  const byMinerals = def.cost > 0 ? Math.floor(minerals / def.cost) : 99;
+  const byGas      = (def.gasCost ?? 0) > 0 ? Math.floor(gas / (def.gasCost ?? 1)) : 99;
+  const bySupply   = supPerPurchase > 0 ? Math.floor(supplyLeft / supPerPurchase) : 99;
+
+  return Math.max(0, Math.min(byMinerals, byGas, bySupply));
+}
+
 // ── Main AI loop ─────────────────────────────────────────────────────────────
 
 export async function runAITurns(
@@ -125,31 +158,52 @@ export async function runAITurns(
     const pid = s.currentPlayerId;
     const faction = s.players[pid].faction;
 
-    // 1. Diplomacy
+    // 1. Diplomacy (FREE — no action cost)
     const dip = getDiplomacyAction(s, pid);
     if (dip) s = setDiplomacy(s, dip.targetId, dip.status);
 
-    // 2. Recruit best available units
-    const recruitTerritory = getBestRecruitTerritory(s, pid);
-    if (recruitTerritory) {
-      let minerals = s.players[pid].minerals;
-      while (minerals >= 1) {
-        const unitType = bestUnitToBuy(faction, minerals);
-        if (!unitType) break;
-        s = recruitUnits(s, recruitTerritory.id, unitType, 1);
-        minerals = s.players[pid].minerals;
+    // 2. Research (costs 1 action)
+    if (s.players[pid].actionsLeft > 0) {
+      const nextTech = TECH_DEFS.find((t) => {
+        if (t.faction && t.faction !== faction) return false;
+        if (!t.faction && Math.random() > 0.4) return false; // upgrades less eagerly
+        if (s.players[pid].techs.includes(t.id)) return false;
+        if (t.requires && !s.players[pid].techs.includes(t.requires)) return false;
+        return s.players[pid].minerals >= t.mineralCost && s.players[pid].gas >= t.gasCost;
+      });
+      if (nextTech) s = researchTech(s, nextTech.id);
+    }
+
+    // 3. Recruit — bulk purchase in ONE action
+    if (s.players[pid].actionsLeft > 0) {
+      const recruitTerritory = getBestRecruitTerritory(s, pid);
+      if (recruitTerritory) {
+        const { minerals, gas, techs } = s.players[pid];
+        const unitType = bestUnitToBuy(faction, minerals, gas, techs);
+        if (unitType) {
+          const count = maxAffordable(s.territories, pid, minerals, gas, unitType, faction);
+          if (count >= 1) {
+            s = recruitUnits(s, recruitTerritory.id, unitType, count);
+          }
+        }
       }
     }
 
     await sleep(200);
 
-    // 3. Attack or reinforce
-    const attack = getBestAttack(s, pid);
-    if (attack) {
-      s = moveArmies(s, attack.fromId, attack.toId);
-    } else {
-      const reinforce = getBestReinforce(s, pid);
-      if (reinforce) s = moveArmies(s, reinforce.fromId, reinforce.toId);
+    // 4. Attack/reinforce — uses remaining actions (each move costs 1)
+    while (s.players[pid].actionsLeft > 0) {
+      const attack = getBestAttack(s, pid);
+      if (attack) {
+        s = moveArmies(s, attack.fromId, attack.toId);
+      } else {
+        const reinforce = getBestReinforce(s, pid);
+        if (reinforce) {
+          s = moveArmies(s, reinforce.fromId, reinforce.toId);
+        } else {
+          break; // nothing to do with remaining actions
+        }
+      }
     }
 
     await sleep(300);

@@ -45,7 +45,22 @@ export interface UnitDef {
   antiAir?: boolean;
   isStructure?: boolean;
   zergDouble?: boolean;
+  gasCost?: number;
+  supply?: number;
+  requiredTech?: string;
   special?: string;
+}
+
+export interface TechDef {
+  id: string;
+  name: string;
+  faction?: Faction;
+  mineralCost: number;
+  gasCost: number;
+  requires?: string;
+  unlocksUnits?: UnitType[];
+  upgradeType?: 'weapons' | 'armor';
+  description?: string;
 }
 
 export interface UnitCount {
@@ -60,6 +75,8 @@ export interface Territory {
   y: number;
   adjacentIds: number[];
   minerals: number;
+  gasYield: number;
+  isStrategic: boolean;
   ownerId: number | null;
   units: UnitCount[];
 }
@@ -69,10 +86,17 @@ export interface Player {
   name: string;
   faction: Faction;
   minerals: number;
+  gas: number;
   isAI: boolean;
   isAlive: boolean;
   color: string;
   diplomacy: Record<number, DiplomacyStatus>;
+  techs: string[];
+  weapons: number;
+  armor: number;
+  actionsLeft: number;
+  homeId: number | null;
+  naturalId: number | null;
 }
 
 export interface GameState {

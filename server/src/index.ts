@@ -3,7 +3,7 @@ import { createServer } from 'http';
 import { Server, Socket } from 'socket.io';
 import path from 'path';
 import type { Faction, Room, RoomInfo, GameState, DiplomacyStatus, UnitType } from './types';
-import { createInitialState, moveArmies, recruitUnits, setDiplomacy, endTurn, canMoveTo } from './gameLogic';
+import { createInitialState, moveArmies, recruitUnits, setDiplomacy, endTurn, canMoveTo, researchTech } from './gameLogic';
 import { runAITurns } from './aiPlayer';
 import { AI_NAMES, AI_FACTIONS, PLAYER_COLORS } from './mapData';
 
@@ -188,6 +188,10 @@ io.on('connection', (socket: Socket) => {
 
   socket.on('set_diplomacy', ({ targetId, status }: { targetId: number; status: DiplomacyStatus }) => {
     validateAndUpdate((s) => setDiplomacy(s, targetId, status));
+  });
+
+  socket.on('research_tech', ({ techId }: { techId: string }) => {
+    validateAndUpdate((s) => researchTech(s, techId));
   });
 
   socket.on('end_turn', () => {

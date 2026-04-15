@@ -143,6 +143,10 @@ export default function App() {
     socket.emit('recruit', { territoryId, unitType, count });
   }, []);
 
+  const handleResearchTech = useCallback((techId: string) => {
+    socket.emit('research_tech', { techId });
+  }, []);
+
   const handleEndTurn = useCallback(() => {
     socket.emit('end_turn');
     setUIState({ selectedTerritoryId: null, moveFrom: null });
@@ -205,6 +209,7 @@ export default function App() {
           isAITurn={isAITurn}
           onDiplomacy={handleDiplomacy}
           onRecruit={handleRecruit}
+          onResearchTech={handleResearchTech}
           onEndTurn={handleEndTurn}
         />
       </div>

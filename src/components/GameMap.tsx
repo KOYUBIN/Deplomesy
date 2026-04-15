@@ -59,6 +59,14 @@ export default function GameMap({ state, uiState, myPlayerIndex, isMyTurn, onTer
   const { territories, players } = state;
   const { moveFrom, selectedTerritoryId } = uiState;
 
+  // Map territory IDs to base type per player for overlay markers
+  const homeMap = new Map<number, { playerColor: string; label: string }>();
+  const naturalMap = new Map<number, { playerColor: string; label: string }>();
+  for (const p of players) {
+    if (p.homeId !== null) homeMap.set(p.homeId, { playerColor: p.color, label: '⌂' });
+    if (p.naturalId !== null) naturalMap.set(p.naturalId, { playerColor: p.color, label: '앞' });
+  }
+
   // Build edges (deduped)
   const drawnEdges = new Set<string>();
   const edges: [Territory, Territory][] = [];
@@ -87,6 +95,10 @@ export default function GameMap({ state, uiState, myPlayerIndex, isMyTurn, onTer
           <feGaussianBlur stdDeviation="3" result="blur" />
           <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
         </filter>
+        <filter id="glow-gold">
+          <feGaussianBlur stdDeviation="4" result="blur" />
+          <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
+        </filter>
       </defs>
 
       <rect width="1000" height="680" fill="url(#bg-grad)" />
@@ -113,6 +125,9 @@ export default function GameMap({ state, uiState, myPlayerIndex, isMyTurn, onTer
         const atk = totalAttack(t.units);
         const def = totalDefense(t.units);
 
+        const homeInfo = homeMap.get(t.id);
+        const naturalInfo = naturalMap.get(t.id);
+
         return (
           <g
             key={t.id}
@@ -120,9 +135,17 @@ export default function GameMap({ state, uiState, myPlayerIndex, isMyTurn, onTer
             onClick={() => clickable && onTerritoryClick(t.id)}
             tabIndex={clickable ? 0 : -1}
             role={clickable ? 'button' : undefined}
-            aria-label={`${t.name}: ${count}기 ATK${atk}/DEF${def}${t.ownerId !== null ? `, 소유: ${players[t.ownerId]?.name}` : ' (중립)'}`}
+            aria-label={`${t.name}: ${count}기 ATK${atk}/DEF${def}${t.ownerId !== null ? `, 소유: ${players[t.ownerId]?.name}` : ' (중립)'}${t.isStrategic ? ' [전략거점]' : ''}`}
             onKeyDown={(e) => e.key === 'Enter' && clickable && onTerritoryClick(t.id)}
           >
+            {/* Strategic territory outer glow ring */}
+            {t.isStrategic && (
+              <circle cx={t.x} cy={t.y} r={TERRITORY_RADIUS + 10}
+                fill="none" stroke="#ffd700" strokeWidth={2} strokeDasharray="5 3"
+                opacity={0.65} filter="url(#glow-gold)"
+              />
+            )}
+
             {/* Selection ring */}
             {isSelected && (
               <circle cx={t.x} cy={t.y} r={TERRITORY_RADIUS + 6}
@@ -140,8 +163,8 @@ export default function GameMap({ state, uiState, myPlayerIndex, isMyTurn, onTer
             <circle cx={t.x} cy={t.y} r={TERRITORY_RADIUS}
               fill={color}
               fillOpacity={t.ownerId === null ? 0.3 : 0.72}
-              stroke={isSelected ? '#fff' : isTarget ? '#ff4444' : '#ffffff33'}
-              strokeWidth={isSelected || isTarget ? 2.5 : 1.5}
+              stroke={isSelected ? '#fff' : isTarget ? '#ff4444' : t.isStrategic ? '#ffd700' : '#ffffff33'}
+              strokeWidth={isSelected || isTarget ? 2.5 : t.isStrategic ? 2 : 1.5}
             />
 
             {/* Name */}
@@ -170,14 +193,50 @@ export default function GameMap({ state, uiState, myPlayerIndex, isMyTurn, onTer
               </text>
             )}
 
-            {/* Mineral dots */}
+            {/* Resource row: minerals + gas yield */}
             <text
               x={t.x + TERRITORY_RADIUS - 5} y={t.y - TERRITORY_RADIUS + 10}
               textAnchor="middle" fill="#7df" fontSize={9} fontFamily="monospace"
               style={{ pointerEvents: 'none', userSelect: 'none' }}
             >
               {Array(t.minerals).fill('◆').join('')}
+              {t.gasYield > 0 ? Array(t.gasYield).fill('⛽').join('') : ''}
             </text>
+
+            {/* Home base marker */}
+            {homeInfo && (
+              <text x={t.x - TERRITORY_RADIUS + 7} y={t.y - TERRITORY_RADIUS + 11}
+                textAnchor="middle" fontSize={13} fontFamily="monospace"
+                fill={homeInfo.playerColor}
+                stroke="#000" strokeWidth={0.5}
+                style={{ pointerEvents: 'none', userSelect: 'none' }}
+              >
+                {homeInfo.label}
+              </text>
+            )}
+
+            {/* Natural expansion marker */}
+            {naturalInfo && !homeInfo && (
+              <text x={t.x - TERRITORY_RADIUS + 9} y={t.y - TERRITORY_RADIUS + 11}
+                textAnchor="middle" fontSize={9} fontWeight="bold" fontFamily="monospace"
+                fill={naturalInfo.playerColor}
+                stroke="#000" strokeWidth={0.5}
+                style={{ pointerEvents: 'none', userSelect: 'none' }}
+              >
+                {naturalInfo.label}
+              </text>
+            )}
+
+            {/* Strategic center icon */}
+            {t.isStrategic && (
+              <text x={t.x} y={t.y - TERRITORY_RADIUS - 3}
+                textAnchor="middle" fontSize={8} fontFamily="monospace"
+                fill="#ffd700"
+                style={{ pointerEvents: 'none', userSelect: 'none' }}
+              >
+                ★전략★
+              </text>
+            )}
           </g>
         );
       })}
