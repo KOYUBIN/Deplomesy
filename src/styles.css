@@ -1181,3 +1181,172 @@ button:disabled { cursor: not-allowed; }
   border-radius: 6px;
   font-size: 13px;
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   RESOURCE ADDITIONS — gas display on territory cards, upgrade badge
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.territory-card-gas {
+  font-size: 11px;
+  color: #5ef;
+}
+
+.pb-upgrade-badge {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  background: #0f1525;
+  border: 1px solid #2a3050;
+  border-radius: 4px;
+  padding: 1px 6px;
+}
+
+.pb-stat-row {
+  padding: 2px 0 4px;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   TECH TREE TAB
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.tech-tab {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.tech-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.tech-section-label {
+  font-size: 10px;
+  color: #556;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  border-bottom: 1px solid #1e2235;
+  padding-bottom: 3px;
+  margin-bottom: 2px;
+}
+
+/* ── Tech node ───────────────────────────────────────────────────────────── */
+
+.tech-node {
+  background: #0f1520;
+  border: 1px solid #1e2235;
+  border-radius: 6px;
+  padding: 7px 9px;
+  transition: border-color 0.15s;
+}
+
+.tech-node.done      { border-color: #1a4a1a; background: #0a1a0a; }
+.tech-node.locked    { opacity: 0.45; }
+.tech-node.available { border-color: #2a3a6a; }
+.tech-node.unaffordable { opacity: 0.6; }
+
+.tech-node-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 3px;
+}
+
+.tech-node-name {
+  font-size: 12px;
+  font-weight: 600;
+  color: #ccddee;
+}
+
+.tech-node.done .tech-node-name { color: #4a8; }
+.tech-node.locked .tech-node-name { color: #667; }
+
+.tech-node-cost {
+  font-size: 11px;
+  color: #668;
+  white-space: nowrap;
+}
+
+.tech-node-desc {
+  font-size: 10px;
+  color: #667;
+  margin-bottom: 4px;
+}
+
+.tech-node-req {
+  font-size: 10px;
+  color: #f84;
+  margin-bottom: 4px;
+}
+
+.tech-research-btn {
+  width: 100%;
+  padding: 5px 8px;
+  font-size: 11px;
+  background: #0a1e30;
+  border: 1px solid #1a3a60;
+  color: #4af;
+  border-radius: 5px;
+  cursor: pointer;
+  transition: background 0.12s;
+}
+
+.tech-research-btn:hover:not(:disabled) { background: #0f2840; }
+.tech-research-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  color: #556;
+  border-color: #1a2030;
+}
+
+/* ── Upgrade rows ────────────────────────────────────────────────────────── */
+
+.upgrade-row {
+  background: #0f1520;
+  border: 1px solid #1e2235;
+  border-radius: 6px;
+  padding: 7px 9px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.upgrade-row-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.upgrade-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: #aab;
+  flex: 1;
+}
+
+.upgrade-pips {
+  display: flex;
+  gap: 3px;
+}
+
+.upgrade-pip {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  border: 1px solid #2a3050;
+  background: #111827;
+}
+
+.upgrade-pip.filled {
+  background: #4a8fff;
+  border-color: #2a6aee;
+  box-shadow: 0 0 4px #4a8fff66;
+}
+
+.upgrade-level {
+  font-size: 10px;
+  color: #556;
+  white-space: nowrap;
+}

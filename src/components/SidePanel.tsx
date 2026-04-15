@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import type { GameState, DiplomacyStatus, UnitType, UnitCount, Territory } from '../types';
-import { WIN_THRESHOLD, UNIT_DEFS } from '../mapData';
+import { WIN_THRESHOLD, UNIT_DEFS, TECH_DEFS } from '../mapData';
 import UnitToken from './UnitToken';
 import UnitCard from './UnitCard';
 
@@ -11,6 +11,7 @@ interface Props {
   isAITurn: boolean;
   onDiplomacy: (targetId: number, status: DiplomacyStatus) => void;
   onRecruit: (territoryId: number, unitType: UnitType, count: number) => void;
+  onResearchTech: (techId: string) => void;
   onEndTurn: () => void;
 }
 
@@ -24,6 +25,18 @@ function totalAttack(units: UnitCount[]): number {
 }
 function totalDefense(units: UnitCount[]): number {
   return units.reduce((s, u) => s + UNIT_DEFS[u.type].defense * u.count, 0);
+}
+
+/** Supply cap = 10 + (owned territories × 2). */
+function computeSupplyCap(territories: Territory[], pid: number): number {
+  return 10 + territories.filter((t) => t.ownerId === pid).length * 2;
+}
+/** Supply currently used by player. */
+function computeUsedSupply(territories: Territory[], pid: number): number {
+  return territories
+    .filter((t) => t.ownerId === pid)
+    .flatMap((t) => t.units)
+    .reduce((s, u) => s + (UNIT_DEFS[u.type].supply ?? 0) * u.count, 0);
 }
 
 function availableUnits(faction: string): UnitType[] {
@@ -53,21 +66,11 @@ const FACTION_LABEL: Record<string, string> = {
 
 // ── Sub-components ─────────────────────────────────────────────────────────
 
-/** Board-game style card for one territory. */
 function TerritoryCard({
-  territory,
-  myColor,
-  enemies,
-  minerals,
-  onRecruit,
-  canRecruit,
+  territory, myColor, enemies, minerals, gas, onRecruit, canRecruit,
 }: {
-  territory: Territory;
-  myColor: string;
-  enemies: boolean;    // any adjacent enemy?
-  minerals: number;
-  onRecruit: () => void;
-  canRecruit: boolean;
+  territory: Territory; myColor: string; enemies: boolean;
+  minerals: number; gas: number; onRecruit: () => void; canRecruit: boolean;
 }) {
   const atk = totalAttack(territory.units);
   const def = totalDefense(territory.units);
@@ -76,29 +79,21 @@ function TerritoryCard({
   return (
     <div
       className="territory-card"
-      style={{
-        borderLeftColor: myColor,
-        boxShadow: enemies ? '0 0 6px #f442' : undefined,
-      }}
+      style={{ borderLeftColor: myColor, boxShadow: enemies ? '0 0 6px #f442' : undefined }}
     >
-      {/* Card header */}
       <div className="territory-card-header">
         <span className="territory-card-name">{territory.name}</span>
         <div className="territory-card-meta">
-          {cnt > 0 && (
-            <span className="territory-card-power">⚔{atk} 🛡{def}</span>
-          )}
+          {cnt > 0 && <span className="territory-card-power">⚔{atk} 🛡{def}</span>}
           <span className="territory-card-minerals">💎{minerals}</span>
+          {gas > 0 && <span className="territory-card-gas">⛽{gas}</span>}
           {enemies && <span className="territory-card-alert">!</span>}
           {canRecruit && (
-            <button className="territory-card-recruit" onClick={onRecruit}>
-              +
-            </button>
+            <button className="territory-card-recruit" onClick={onRecruit}>+</button>
           )}
         </div>
       </div>
 
-      {/* Unit tokens grid */}
       {territory.units.length > 0 && (
         <div className="unit-token-grid">
           {territory.units.map((u) => (
@@ -106,10 +101,7 @@ function TerritoryCard({
           ))}
         </div>
       )}
-
-      {cnt === 0 && (
-        <div className="territory-card-empty">유닛 없음</div>
-      )}
+      {cnt === 0 && <div className="territory-card-empty">유닛 없음</div>}
     </div>
   );
 }
@@ -118,11 +110,11 @@ function TerritoryCard({
 
 export default function SidePanel({
   state, myPlayerIndex, isMyTurn, isAITurn,
-  onDiplomacy, onRecruit, onEndTurn,
+  onDiplomacy, onRecruit, onResearchTech, onEndTurn,
 }: Props) {
-  const [tab, setTab] = useState<'board' | 'map' | 'diplomacy' | 'log'>('board');
-  const [recruitId, setRecruitId]   = useState<number | null>(null);
-  const [recruitType, setRecruitType] = useState<UnitType>('infantry');
+  const [tab, setTab] = useState<'board' | 'map' | 'diplomacy' | 'log' | 'tech'>('board');
+  const [recruitId, setRecruitId]       = useState<number | null>(null);
+  const [recruitType, setRecruitType]   = useState<UnitType>('infantry');
   const [recruitCount, setRecruitCount] = useState(1);
 
   const me = state.players[myPlayerIndex];
@@ -131,11 +123,17 @@ export default function SidePanel({
 
   if (!me) return null;
 
-  const myUnits   = availableUnits(me.faction);
-  const selDef    = UNIT_DEFS[recruitType];
-  const maxBuy    = Math.floor(me.minerals / selDef.cost);
-  const safeCnt   = Math.min(recruitCount, maxBuy);
-  const actualQty = (me.faction === 'zerg' && selDef.zergDouble) ? safeCnt * 2 : safeCnt;
+  const myUnits    = availableUnits(me.faction);
+  const selDef     = UNIT_DEFS[recruitType];
+  const meHasTech  = (ut: UnitType) => {
+    const req = UNIT_DEFS[ut].requiredTech;
+    return !req || me.techs.includes(req);
+  };
+  const maxBuyMin  = Math.floor(me.minerals / selDef.cost);
+  const maxBuyGas  = selDef.gasCost ? Math.floor(me.gas / selDef.gasCost) : Infinity;
+  const maxBuy     = Math.min(maxBuyMin, maxBuyGas);
+  const safeCnt    = Math.min(recruitCount, Math.max(0, maxBuy));
+  const actualQty  = (me.faction === 'zerg' && selDef.zergDouble) ? safeCnt * 2 : safeCnt;
 
   const groundUnits    = myUnits.filter((u) => !UNIT_DEFS[u].isAir && !UNIT_DEFS[u].isStructure);
   const airUnits       = myUnits.filter((u) =>  UNIT_DEFS[u].isAir);
@@ -145,12 +143,23 @@ export default function SidePanel({
   const totalMyDef  = myTerritories.reduce((s, t) => s + totalDefense(t.units), 0);
   const totalMyUnits = myTerritories.reduce((s, t) => s + totalCount(t.units), 0);
 
+  const supCap  = computeSupplyCap(state.territories, myPlayerIndex);
+  const supUsed = computeUsedSupply(state.territories, myPlayerIndex);
+
   const dipLabel: Record<DiplomacyStatus, string> = {
     ally: '🤝 동맹', neutral: '⚪ 중립', war: '⚔ 전쟁',
   };
 
+  // Tech tree filtered for current player
+  const myFactionTechs = TECH_DEFS.filter((t) => !t.faction || t.faction === me.faction);
+  const upgradeTechs   = TECH_DEFS.filter((t) => t.upgradeType);
+  const factionOnlyTechs = myFactionTechs.filter((t) => !t.upgradeType);
+
   function openRecruit(id: number) {
-    const affordable = myUnits.find((u) => UNIT_DEFS[u].cost <= me.minerals) ?? myUnits[0];
+    const affordable = myUnits.find((u) => {
+      const d = UNIT_DEFS[u];
+      return d.cost <= me.minerals && (d.gasCost ?? 0) <= me.gas && meHasTech(u);
+    }) ?? myUnits[0];
     setRecruitType(affordable);
     setRecruitCount(1);
     setRecruitId(id);
@@ -171,6 +180,12 @@ export default function SidePanel({
         <div className="pb-identity">
           <span className="pb-name" style={{ color: me.color }}>{me.name}</span>
           <span className="pb-faction-badge">{FACTION_LABEL[me.faction] ?? me.faction}</span>
+          {(me.weapons > 0 || me.armor > 0) && (
+            <span className="pb-upgrade-badge">
+              {me.weapons > 0 && <span style={{ color: '#f87' }}>⚔+{me.weapons}</span>}
+              {me.armor > 0  && <span style={{ color: '#87f' }}>🛡+{me.armor}</span>}
+            </span>
+          )}
         </div>
         <div className="pb-resources">
           <div className="pb-res-cell">
@@ -179,14 +194,25 @@ export default function SidePanel({
           </div>
           <div className="pb-res-sep" />
           <div className="pb-res-cell">
+            <span className="pb-res-val">⛽ {me.gas}</span>
+            <span className="pb-res-lbl">가스</span>
+          </div>
+          <div className="pb-res-sep" />
+          <div className="pb-res-cell">
             <span className="pb-res-val">🗺 {myTerritories.length}<span style={{ color: '#556', fontSize: 11 }}>/{WIN_THRESHOLD}</span></span>
             <span className="pb-res-lbl">행성</span>
           </div>
           <div className="pb-res-sep" />
           <div className="pb-res-cell">
-            <span className="pb-res-val">⚔{totalMyAtk} <span style={{ color: '#556', fontSize: 10 }}>🛡{totalMyDef}</span></span>
-            <span className="pb-res-lbl">{totalMyUnits}기</span>
+            <span className="pb-res-val" style={{ color: supUsed >= supCap ? '#f66' : '#af8' }}>
+              {supUsed}/{supCap}
+            </span>
+            <span className="pb-res-lbl">인구수</span>
           </div>
+        </div>
+        {/* Upgrade level badges */}
+        <div className="pb-stat-row">
+          <span style={{ fontSize: 10, color: '#778' }}>⚔ {totalMyAtk} 🛡 {totalMyDef} · {totalMyUnits}기</span>
         </div>
         {/* Win progress track */}
         <div className="pb-progress-track">
@@ -212,7 +238,7 @@ export default function SidePanel({
 
       {/* ── Tabs ────────────────────────────────────────────────────────── */}
       <div className="pb-tabs">
-        {([['board', '내 보드'], ['map', '세력도'], ['diplomacy', '외교'], ['log', '로그']] as const).map(
+        {([['board', '내 보드'], ['tech', '🔬 테크'], ['map', '세력도'], ['diplomacy', '외교'], ['log', '로그']] as const).map(
           ([key, label]) => (
             <button
               key={key}
@@ -248,6 +274,7 @@ export default function SidePanel({
                     myColor={me.color}
                     enemies={hasEnemyAdj}
                     minerals={t.minerals}
+                    gas={t.gasYield}
                     onRecruit={() => openRecruit(t.id)}
                     canRecruit={isMyTurn && !isAITurn && me.minerals >= 1}
                   />
@@ -255,9 +282,13 @@ export default function SidePanel({
               })
             )}
 
-            {/* Recruit panel (slides in below territories) */}
+            {/* Recruit panel */}
             {recruitId !== null && (() => {
               const terrName = state.territories[recruitId]?.name ?? '';
+              const canAffordThis = (ut: UnitType) => {
+                const d = UNIT_DEFS[ut];
+                return d.cost <= me.minerals && (d.gasCost ?? 0) <= me.gas && meHasTech(ut);
+              };
               return (
                 <div className="recruit-sheet">
                   <div className="recruit-sheet-title">
@@ -265,7 +296,6 @@ export default function SidePanel({
                     <button className="recruit-sheet-close" onClick={() => setRecruitId(null)}>✕</button>
                   </div>
 
-                  {/* Unit cards by category */}
                   {([
                     ['🗡 지상', groundUnits],
                     ['✈ 공중', airUnits],
@@ -280,7 +310,7 @@ export default function SidePanel({
                               key={ut}
                               type={ut}
                               selected={ut === recruitType}
-                              canAfford={UNIT_DEFS[ut].cost <= me.minerals}
+                              canAfford={canAffordThis(ut)}
                               isZergBonus={me.faction === 'zerg' && UNIT_DEFS[ut].zergDouble}
                               onClick={() => { setRecruitType(ut); setRecruitCount(1); }}
                             />
@@ -297,7 +327,10 @@ export default function SidePanel({
                       <span className="recruit-count-main">
                         {safeCnt}기{actualQty !== safeCnt ? ` → ${actualQty}기` : ''}
                       </span>
-                      <span className="recruit-count-cost">비용 {safeCnt * selDef.cost}💎</span>
+                      <span className="recruit-count-cost">
+                        {safeCnt * selDef.cost}💎
+                        {selDef.gasCost ? ` ${safeCnt * selDef.gasCost}⛽` : ''}
+                      </span>
                     </div>
                     <button className="count-adj" onClick={() => setRecruitCount(Math.min(Math.max(1, maxBuy), recruitCount + 1))}>+</button>
                   </div>
@@ -305,7 +338,7 @@ export default function SidePanel({
                   <div className="recruit-actions">
                     <button
                       className="confirm-btn"
-                      disabled={safeCnt < 1 || safeCnt * selDef.cost > me.minerals}
+                      disabled={safeCnt < 1 || safeCnt * selDef.cost > me.minerals || (selDef.gasCost ? safeCnt * selDef.gasCost > me.gas : false)}
                       onClick={confirmRecruit}
                     >
                       징집
@@ -315,6 +348,89 @@ export default function SidePanel({
                 </div>
               );
             })()}
+          </div>
+        )}
+
+        {/* ── TECH TAB ──────────────────────────────────────────────────── */}
+        {tab === 'tech' && (
+          <div className="tech-tab">
+            {/* Faction tech tree */}
+            {factionOnlyTechs.length > 0 && (
+              <div className="tech-section">
+                <div className="tech-section-label">종족 기술</div>
+                {factionOnlyTechs.map((t) => {
+                  const done     = me.techs.includes(t.id);
+                  const locked   = !!(t.requires && !me.techs.includes(t.requires));
+                  const canAfford = me.minerals >= t.mineralCost && me.gas >= t.gasCost;
+                  const available = !done && !locked;
+                  return (
+                    <div key={t.id} className={`tech-node ${done ? 'done' : locked ? 'locked' : available && canAfford ? 'available' : 'unaffordable'}`}>
+                      <div className="tech-node-header">
+                        <span className="tech-node-name">{done ? '✅ ' : locked ? '🔒 ' : ''}{t.name}</span>
+                        <span className="tech-node-cost">{t.mineralCost}💎 {t.gasCost}⛽</span>
+                      </div>
+                      {t.description && (
+                        <div className="tech-node-desc">{t.description}</div>
+                      )}
+                      {locked && t.requires && (
+                        <div className="tech-node-req">
+                          필요: {TECH_DEFS.find((x) => x.id === t.requires)?.name ?? t.requires}
+                        </div>
+                      )}
+                      {available && isMyTurn && !isAITurn && (
+                        <button
+                          className="tech-research-btn"
+                          disabled={!canAfford}
+                          onClick={() => onResearchTech(t.id)}
+                        >
+                          {canAfford ? '연구' : '자원 부족'}
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* Upgrade tree */}
+            <div className="tech-section">
+              <div className="tech-section-label">업그레이드</div>
+              {(['weapons', 'armor'] as const).map((kind) => {
+                const currentLevel = kind === 'weapons' ? me.weapons : me.armor;
+                const nextTechs = upgradeTechs.filter((t) => t.upgradeType === kind);
+                const nextNode = nextTechs.find((t) => !me.techs.includes(t.id));
+                return (
+                  <div key={kind} className="upgrade-row">
+                    <div className="upgrade-row-header">
+                      <span className="upgrade-label">
+                        {kind === 'weapons' ? '⚔ 무기 개량' : '🛡 장갑 강화'}
+                      </span>
+                      <div className="upgrade-pips">
+                        {[1, 2, 3].map((lvl) => (
+                          <span key={lvl} className={`upgrade-pip ${lvl <= currentLevel ? 'filled' : ''}`} />
+                        ))}
+                      </div>
+                      <span className="upgrade-level">Lv {currentLevel}/3</span>
+                    </div>
+                    {nextNode && isMyTurn && !isAITurn && (() => {
+                      const locked = !!(nextNode.requires && !me.techs.includes(nextNode.requires));
+                      const canAfford = me.minerals >= nextNode.mineralCost && me.gas >= nextNode.gasCost;
+                      return !locked ? (
+                        <button
+                          className="tech-research-btn"
+                          disabled={!canAfford}
+                          onClick={() => onResearchTech(nextNode.id)}
+                        >
+                          {nextNode.name} ({nextNode.mineralCost}💎 {nextNode.gasCost}⛽)
+                          {!canAfford ? ' — 자원 부족' : ''}
+                        </button>
+                      ) : null;
+                    })()}
+                    {currentLevel === 3 && <div className="tech-node-desc">최대 레벨 달성!</div>}
+                  </div>
+                );
+              })}
+            </div>
           </div>
         )}
 

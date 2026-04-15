@@ -1,5 +1,5 @@
 import type { GameState, Player, Territory, DiplomacyStatus, PlayerSetup, UnitType, UnitCount } from './types';
-import { INITIAL_TERRITORIES, PLAYER_STARTS, PLAYER_COLORS, WIN_THRESHOLD, UNIT_DEFS } from './mapData';
+import { INITIAL_TERRITORIES, PLAYER_STARTS, PLAYER_COLORS, WIN_THRESHOLD, UNIT_DEFS, TECH_DEFS } from './mapData';
 
 // ── Unit helpers ────────────────────────────────────────────────────────────
 
@@ -20,6 +20,23 @@ export function movableCount(units: UnitCount[]): number {
   return units.reduce((s, u) => s + (UNIT_DEFS[u.type].isStructure ? 0 : u.count), 0);
 }
 
+// ── Supply helpers ──────────────────────────────────────────────────────────
+
+/** Supply cap: 10 base + 2 per owned territory. */
+export function supplyCap(territories: Territory[], pid: number): number {
+  return 10 + territories.filter((t) => t.ownerId === pid).length * 2;
+}
+
+/** Supply currently used by a player across all their territories. */
+export function usedSupply(territories: Territory[], pid: number): number {
+  return territories
+    .filter((t) => t.ownerId === pid)
+    .flatMap((t) => t.units)
+    .reduce((s, u) => s + (UNIT_DEFS[u.type].supply ?? 0) * u.count, 0);
+}
+
+// ── Private helpers ─────────────────────────────────────────────────────────
+
 function mergeUnits(target: UnitCount[], incoming: UnitCount[]): void {
   for (const inc of incoming) {
     const existing = target.find((u) => u.type === inc.type);
@@ -38,7 +55,6 @@ function trimToStrength(units: UnitCount[], targetStr: number, mode: 'attack' | 
   const val = (t: UnitType) => (mode === 'attack' ? UNIT_DEFS[t].attack : UNIT_DEFS[t].defense);
   let cur = result.reduce((s, u) => s + val(u.type) * u.count, 0);
 
-  // Sort types by value ascending (kill cheapest/weakest first)
   const types = [...new Set(result.map((u) => u.type))].sort((a, b) => val(a) - val(b));
 
   for (const type of types) {
@@ -104,12 +120,21 @@ export function createInitialState(playerSetups: PlayerSetup[]): GameState {
       name: setup.name,
       faction: setup.faction,
       minerals: 5,
+      gas: 2,
       isAI: setup.isAI,
       isAlive: true,
       color: PLAYER_COLORS[i],
       diplomacy,
+      techs: [],
+      weapons: 0,
+      armor: 0,
     };
   });
+
+  // Raiders start with firebat (already has requiredTech raiders_garage).
+  // Give them the tech for free to avoid an awkward start.
+  const raidersIdx = players.findIndex((p) => p.faction === 'raiders');
+  if (raidersIdx >= 0) players[raidersIdx].techs.push('raiders_garage');
 
   for (let i = 0; i < playerSetups.length; i++) {
     const tid = PLAYER_STARTS[i];
@@ -165,7 +190,7 @@ export function moveArmies(state: GameState, fromId: number, toId: number): Game
   if (!canMoveTo(state.territories, state.players, fromId, toId, pid)) return state;
 
   const territories = state.territories.map((t) => ({ ...t, units: deepUnits(t.units) }));
-  const players = state.players.map((p) => ({ ...p, diplomacy: { ...p.diplomacy } }));
+  const players = state.players.map((p) => ({ ...p, diplomacy: { ...p.diplomacy }, techs: [...p.techs] }));
   const log = [...state.log];
 
   const from = territories[fromId];
@@ -175,28 +200,36 @@ export function moveArmies(state: GameState, fromId: number, toId: number): Game
   from.units = stayingUnit(from.units);
 
   if (to.ownerId === null || to.ownerId === pid) {
-    // Move/reinforce neutral or own territory
     to.ownerId = pid;
     mergeUnits(to.units, moving);
     log.push(`${players[pid].name}: ${from.name} → ${to.name} (⚔${totalAttack(moving)})`);
   } else {
     // ── Attack ───────────────────────────────────────────────────────────
     const defender = to.ownerId;
-    const atkStr = totalAttack(moving);
+    const rawAtk = totalAttack(moving);
 
-    // Air defenders only count if attacker has anti-air or air-to-air capability.
-    // Structures always defend. Ground always defends.
     const hasAntiAir = moving.some((u) => UNIT_DEFS[u.type].antiAir || UNIT_DEFS[u.type].isAir);
 
-    const defStr = to.units.reduce((s, u) => {
+    const rawDef = to.units.reduce((s, u) => {
       const def = UNIT_DEFS[u.type];
-      if (def.isStructure) return s + def.defense;          // 건물: 항상 수비
-      if (def.isAir)       return hasAntiAir ? s + def.defense : s; // 공중: 대공 없으면 무시
-      return s + def.defense;                                // 지상: 항상 수비
+      if (def.isStructure) return s + def.defense;
+      if (def.isAir) return hasAntiAir ? s + def.defense : s;
+      return s + def.defense;
     }, 0);
 
+    // Apply weapon/armor upgrades
+    const movingCount = moving.reduce((s, u) => s + u.count, 0);
+    const atkStr = rawAtk + players[pid].weapons * movingCount;
+
+    const activeDefCount = to.units.reduce((s, u) => {
+      const def = UNIT_DEFS[u.type];
+      if (def.isStructure) return s + u.count;
+      if (def.isAir) return hasAntiAir ? s + u.count : s;
+      return s + u.count;
+    }, 0);
+    const defStr = rawDef + (players[defender]?.armor ?? 0) * activeDefCount;
+
     if (atkStr > defStr) {
-      // Attacker wins — survivors trimmed to (atkStr - defStr)
       const remaining = Math.max(0, atkStr - defStr);
       const survivors = remaining > 0 ? trimToStrength(moving, remaining, 'attack') : [];
       to.ownerId = pid;
@@ -205,13 +238,12 @@ export function moveArmies(state: GameState, fromId: number, toId: number): Game
       players[pid].diplomacy[defender] = 'war';
       players[defender].diplomacy[pid] = 'war';
     } else {
-      // Defender wins — only "active" defenders take casualties; immune air units survive intact
       const remaining = Math.max(0, defStr - atkStr);
 
       const activeDefenders = to.units.filter((u) => {
         const def = UNIT_DEFS[u.type];
         if (def.isStructure) return true;
-        if (def.isAir)       return hasAntiAir;
+        if (def.isAir) return hasAntiAir;
         return true;
       });
       const immuneAir = deepUnits(to.units.filter((u) => UNIT_DEFS[u.type].isAir && !hasAntiAir));
@@ -239,35 +271,87 @@ export function recruitUnits(
   // Faction restriction
   if (def.faction && def.faction !== state.players[pid].faction) return state;
 
-  const cost = def.cost * count;
-  if (state.players[pid].minerals < cost) return state;
+  // Tech requirement
+  if (def.requiredTech && !state.players[pid].techs.includes(def.requiredTech)) return state;
+
+  const mineralCost = def.cost * count;
+  const gasCost = (def.gasCost ?? 0) * count;
+
+  if (state.players[pid].minerals < mineralCost) return state;
+  if (state.players[pid].gas < gasCost) return state;
   if (state.territories[territoryId].ownerId !== pid) return state;
   if (count < 1) return state;
 
-  // Zerg gets 2× zerglings
   const actual = (state.players[pid].faction === 'zerg' && def.zergDouble) ? count * 2 : count;
 
+  // Supply check (use actual count for supply)
+  const cap = supplyCap(state.territories, pid);
+  const used = usedSupply(state.territories, pid);
+  const addedSupply = (def.supply ?? 0) * actual;
+  if (addedSupply > 0 && used + addedSupply > cap) return state;
+
   const territories = state.territories.map((t) => ({ ...t, units: deepUnits(t.units) }));
-  const players = state.players.map((p) => ({ ...p }));
+  const players = state.players.map((p) => ({ ...p, techs: [...p.techs] }));
 
   mergeUnits(territories[territoryId].units, [{ type: unitType, count: actual }]);
-  players[pid].minerals -= cost;
+  players[pid].minerals -= mineralCost;
+  players[pid].gas -= gasCost;
 
-  const suffix = actual !== count ? ` (×2 저그 보너스 → ${actual}기)` : '';
+  const gasSuffix = gasCost > 0 ? ` -${gasCost}⛽` : '';
+  const zergSuffix = actual !== count ? ` (×2 저그 보너스 → ${actual}기)` : '';
   return {
     ...state,
     territories,
     players,
     log: [
       ...state.log,
-      `${players[pid].name}: ${territories[territoryId].name}에 ${def.name} ${actual}기 징집 (-${cost}💎)${suffix}`,
+      `${players[pid].name}: ${territories[territoryId].name}에 ${def.name} ${actual}기 징집 (-${mineralCost}💎${gasSuffix})${zergSuffix}`,
+    ],
+  };
+}
+
+export function researchTech(state: GameState, techId: string): GameState {
+  const pid = state.currentPlayerId;
+  const tech = TECH_DEFS.find((t) => t.id === techId);
+  if (!tech) return state;
+
+  // Faction gate (upgrade techs have no faction — available to all)
+  if (tech.faction && tech.faction !== state.players[pid].faction) return state;
+  // Already researched
+  if (state.players[pid].techs.includes(techId)) return state;
+  // Prerequisite
+  if (tech.requires && !state.players[pid].techs.includes(tech.requires)) return state;
+  // Cost
+  if (state.players[pid].minerals < tech.mineralCost) return state;
+  if (state.players[pid].gas < tech.gasCost) return state;
+
+  const players = state.players.map((p) => ({ ...p, techs: [...p.techs] }));
+  players[pid].minerals -= tech.mineralCost;
+  players[pid].gas -= tech.gasCost;
+  players[pid].techs.push(techId);
+
+  if (tech.upgradeType === 'weapons') players[pid].weapons = Math.min(3, players[pid].weapons + 1);
+  if (tech.upgradeType === 'armor')   players[pid].armor   = Math.min(3, players[pid].armor   + 1);
+
+  const unlockStr = tech.unlocksUnits?.length
+    ? ` (${tech.unlocksUnits.map((u) => UNIT_DEFS[u].name).join(', ')} 해금)`
+    : '';
+  const upgradeStr = tech.upgradeType === 'weapons' ? ` (무기 Lv${players[pid].weapons})`
+    : tech.upgradeType === 'armor' ? ` (방어 Lv${players[pid].armor})` : '';
+
+  return {
+    ...state,
+    players,
+    log: [
+      ...state.log,
+      `🔬 ${players[pid].name}: ${tech.name} 연구 완료 (-${tech.mineralCost}💎 -${tech.gasCost}⛽)${unlockStr}${upgradeStr}`,
     ],
   };
 }
 
 export function setDiplomacy(state: GameState, targetId: number, status: DiplomacyStatus): GameState {
   const pid = state.currentPlayerId;
-  const players = state.players.map((p) => ({ ...p, diplomacy: { ...p.diplomacy } }));
+  const players = state.players.map((p) => ({ ...p, diplomacy: { ...p.diplomacy }, techs: [...p.techs] }));
   players[pid].diplomacy[targetId] = status;
   if (status === 'ally') players[targetId].diplomacy[pid] = 'ally';
   if (status === 'war')  players[targetId].diplomacy[pid] = 'war';
@@ -281,17 +365,22 @@ export function setDiplomacy(state: GameState, targetId: number, status: Diploma
 }
 
 export function endTurn(state: GameState): GameState {
-  const players = state.players.map((p) => ({ ...p }));
+  const players = state.players.map((p) => ({ ...p, techs: [...p.techs] }));
   const territories = state.territories.map((t) => ({ ...t, units: deepUnits(t.units) }));
   const log = [...state.log];
   const cur = state.currentPlayerId;
 
-  // Collect mineral income
+  // Collect mineral + gas income
   let income = 0;
+  let gasIncome = 0;
   for (const t of territories) {
-    if (t.ownerId === cur) income += t.minerals;
+    if (t.ownerId === cur) {
+      income += t.minerals;
+      gasIncome += t.gasYield;
+    }
   }
   players[cur].minerals += income;
+  players[cur].gas += gasIncome;
 
   // Zerg: spawn 1 zergling per owned territory (regen)
   if (players[cur].faction === 'zerg') {

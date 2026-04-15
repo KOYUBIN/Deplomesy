@@ -54,6 +54,12 @@ export default function UnitCard({ type, selected, canAfford, isZergBonus, onCli
       <div className="unit-card-stats">
         <span style={{ color: '#f87' }}>⚔{def.attack}</span>
         <span style={{ color: '#87f' }}>🛡{def.defense}</span>
+        {def.gasCost != null && def.gasCost > 0 && (
+          <span style={{ color: '#5ef' }}>⛽{def.gasCost}</span>
+        )}
+        {def.supply != null && def.supply > 0 && (
+          <span style={{ color: '#af8' }}>👤{def.supply}</span>
+        )}
         {def.antiAir && <span className="unit-card-tag" style={{ color: '#7cf', borderColor: '#1a4060' }}>대공</span>}
       </div>
 
