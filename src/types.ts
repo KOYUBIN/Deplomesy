@@ -76,6 +76,7 @@ export interface Territory {
   adjacentIds: number[];
   minerals: number;
   gasYield: number;
+  isStrategic: boolean;
   ownerId: number | null;
   units: UnitCount[];
 }
@@ -93,6 +94,9 @@ export interface Player {
   techs: string[];
   weapons: number;
   armor: number;
+  actionsLeft: number;
+  homeId: number | null;
+  naturalId: number | null;
 }
 
 export interface GameState {

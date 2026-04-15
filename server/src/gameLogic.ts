@@ -35,6 +35,17 @@ export function usedSupply(territories: Territory[], pid: number): number {
     .reduce((s, u) => s + (UNIT_DEFS[u.type].supply ?? 0) * u.count, 0);
 }
 
+// ── Action helpers ──────────────────────────────────────────────────────────
+
+/**
+ * Max actions per turn for a player.
+ * Base 3 + 1 per 2 strategic territories held (센터 장악 보너스).
+ */
+export function computeMaxActions(territories: Territory[], pid: number): number {
+  const strategic = territories.filter((t) => t.ownerId === pid && t.isStrategic).length;
+  return 3 + Math.floor(strategic / 2);
+}
+
 // ── Private helpers ─────────────────────────────────────────────────────────
 
 function mergeUnits(target: UnitCount[], incoming: UnitCount[]): void {
@@ -47,6 +58,10 @@ function mergeUnits(target: UnitCount[], incoming: UnitCount[]): void {
 
 function deepUnits(units: UnitCount[]): UnitCount[] {
   return units.map((u) => ({ ...u }));
+}
+
+function deepPlayer(p: Player): Player {
+  return { ...p, diplomacy: { ...p.diplomacy }, techs: [...p.techs] };
 }
 
 /** Remove cheapest units until remaining ATK (or DEF) = targetStr. */
@@ -69,10 +84,6 @@ function trimToStrength(units: UnitCount[], targetStr: number, mode: 'attack' | 
   return result.filter((u) => u.count > 0);
 }
 
-/**
- * Units that move out — all non-structure units, minus 1 cheapest non-structure left behind.
- * Structures NEVER move.
- */
 function movingUnits(units: UnitCount[]): UnitCount[] {
   const nonStructures = units.filter((u) => !UNIT_DEFS[u.type].isStructure);
   if (totalCount(nonStructures) <= 1) return [];
@@ -83,9 +94,6 @@ function movingUnits(units: UnitCount[]): UnitCount[] {
   return result.filter((u) => u.count > 0);
 }
 
-/**
- * Units that always stay behind: all structures + 1 cheapest non-structure unit.
- */
 function stayingUnit(units: UnitCount[]): UnitCount[] {
   const structures = deepUnits(units.filter((u) => UNIT_DEFS[u.type].isStructure));
   const nonStructures = units.filter((u) => !UNIT_DEFS[u.type].isStructure);
@@ -115,6 +123,7 @@ export function createInitialState(playerSetups: PlayerSetup[]): GameState {
     for (let j = 0; j < playerSetups.length; j++) {
       if (j !== i) diplomacy[j] = 'neutral';
     }
+    const homeId = PLAYER_STARTS[i] ?? null;
     return {
       id: i,
       name: setup.name,
@@ -128,11 +137,13 @@ export function createInitialState(playerSetups: PlayerSetup[]): GameState {
       techs: [],
       weapons: 0,
       armor: 0,
+      actionsLeft: 3,
+      homeId,
+      naturalId: null,
     };
   });
 
-  // Raiders start with firebat (already has requiredTech raiders_garage).
-  // Give them the tech for free to avoid an awkward start.
+  // Raiders need raiders_garage to recruit their starting firebat
   const raidersIdx = players.findIndex((p) => p.faction === 'raiders');
   if (raidersIdx >= 0) players[raidersIdx].techs.push('raiders_garage');
 
@@ -150,7 +161,7 @@ export function createInitialState(playerSetups: PlayerSetup[]): GameState {
     currentPlayerId: 0,
     players,
     territories,
-    log: ['게임 시작!'],
+    log: ['게임 시작! 본진을 지키고 앞마당을 확보하라.'],
     winner: null,
   };
 }
@@ -188,20 +199,37 @@ export function checkWinner(state: GameState): number | null {
 export function moveArmies(state: GameState, fromId: number, toId: number): GameState {
   const pid = state.currentPlayerId;
   if (!canMoveTo(state.territories, state.players, fromId, toId, pid)) return state;
+  // Cost: 1 action
+  if (state.players[pid].actionsLeft <= 0) return state;
 
   const territories = state.territories.map((t) => ({ ...t, units: deepUnits(t.units) }));
-  const players = state.players.map((p) => ({ ...p, diplomacy: { ...p.diplomacy }, techs: [...p.techs] }));
+  const players = state.players.map(deepPlayer);
   const log = [...state.log];
 
   const from = territories[fromId];
-  const to = territories[toId];
+  const to   = territories[toId];
 
   const moving = movingUnits(from.units);
   from.units = stayingUnit(from.units);
 
+  // Deduct action
+  players[pid].actionsLeft -= 1;
+
   if (to.ownerId === null || to.ownerId === pid) {
+    // Move/reinforce — neutral or own territory
     to.ownerId = pid;
     mergeUnits(to.units, moving);
+
+    // ── Auto-natural designation ──────────────────────────────────────────
+    const me = players[pid];
+    if (me.naturalId === null && me.homeId !== null) {
+      const home = territories[me.homeId];
+      if (home.adjacentIds.includes(to.id)) {
+        me.naturalId = to.id;
+        log.push(`🏗 ${me.name}: ${to.name} 앞마당 확보! (+1💎 +1⛽/턴)`);
+      }
+    }
+
     log.push(`${players[pid].name}: ${from.name} → ${to.name} (⚔${totalAttack(moving)})`);
   } else {
     // ── Attack ───────────────────────────────────────────────────────────
@@ -217,7 +245,7 @@ export function moveArmies(state: GameState, fromId: number, toId: number): Game
       return s + def.defense;
     }, 0);
 
-    // Apply weapon/armor upgrades
+    // Weapon/armor upgrades + strategic terrain bonus for defender
     const movingCount = moving.reduce((s, u) => s + u.count, 0);
     const atkStr = rawAtk + players[pid].weapons * movingCount;
 
@@ -227,16 +255,30 @@ export function moveArmies(state: GameState, fromId: number, toId: number): Game
       if (def.isAir) return hasAntiAir ? s + u.count : s;
       return s + u.count;
     }, 0);
-    const defStr = rawDef + (players[defender]?.armor ?? 0) * activeDefCount;
+    // Strategic territory: +2 flat defense bonus (high ground / choke point)
+    const strategicBonus = to.isStrategic ? 2 : 0;
+    const defStr = rawDef + (players[defender]?.armor ?? 0) * activeDefCount + strategicBonus;
 
     if (atkStr > defStr) {
       const remaining = Math.max(0, atkStr - defStr);
       const survivors = remaining > 0 ? trimToStrength(moving, remaining, 'attack') : [];
       to.ownerId = pid;
       to.units = survivors.length > 0 ? survivors : [{ type: 'infantry', count: 1 }];
-      log.push(`⚔ ${players[pid].name} → ${to.name} 점령! (ATK ${atkStr} vs DEF ${defStr})`);
+
+      const bonusStr = strategicBonus > 0 ? ` [전략거점+${strategicBonus}DEF]` : '';
+      log.push(`⚔ ${players[pid].name} → ${to.name} 점령!${bonusStr} (ATK ${atkStr} vs DEF ${defStr})`);
       players[pid].diplomacy[defender] = 'war';
       players[defender].diplomacy[pid] = 'war';
+
+      // Auto-natural for newly captured territory
+      const me = players[pid];
+      if (me.naturalId === null && me.homeId !== null) {
+        const home = territories[me.homeId];
+        if (home.adjacentIds.includes(to.id)) {
+          me.naturalId = to.id;
+          log.push(`🏗 ${me.name}: ${to.name} 앞마당 확보! (+1💎 +1⛽/턴)`);
+        }
+      }
     } else {
       const remaining = Math.max(0, defStr - atkStr);
 
@@ -252,7 +294,9 @@ export function moveArmies(state: GameState, fromId: number, toId: number): Game
         ? trimToStrength(activeDefenders, remaining, 'defense')
         : [{ type: 'infantry' as UnitType, count: 1 }];
       to.units = [...trimmed, ...immuneAir];
-      log.push(`🛡 ${to.name} 방어 성공! (DEF ${defStr} vs ATK ${atkStr})`);
+
+      const bonusStr = strategicBonus > 0 ? ` [전략거점+${strategicBonus}DEF]` : '';
+      log.push(`🛡 ${to.name} 방어 성공!${bonusStr} (DEF ${defStr} vs ATK ${atkStr})`);
     }
   }
 
@@ -270,12 +314,13 @@ export function recruitUnits(
 
   // Faction restriction
   if (def.faction && def.faction !== state.players[pid].faction) return state;
-
   // Tech requirement
   if (def.requiredTech && !state.players[pid].techs.includes(def.requiredTech)) return state;
+  // Action cost
+  if (state.players[pid].actionsLeft <= 0) return state;
 
   const mineralCost = def.cost * count;
-  const gasCost = (def.gasCost ?? 0) * count;
+  const gasCost     = (def.gasCost ?? 0) * count;
 
   if (state.players[pid].minerals < mineralCost) return state;
   if (state.players[pid].gas < gasCost) return state;
@@ -284,20 +329,21 @@ export function recruitUnits(
 
   const actual = (state.players[pid].faction === 'zerg' && def.zergDouble) ? count * 2 : count;
 
-  // Supply check (use actual count for supply)
+  // Supply check
   const cap = supplyCap(state.territories, pid);
   const used = usedSupply(state.territories, pid);
   const addedSupply = (def.supply ?? 0) * actual;
   if (addedSupply > 0 && used + addedSupply > cap) return state;
 
   const territories = state.territories.map((t) => ({ ...t, units: deepUnits(t.units) }));
-  const players = state.players.map((p) => ({ ...p, techs: [...p.techs] }));
+  const players = state.players.map(deepPlayer);
 
   mergeUnits(territories[territoryId].units, [{ type: unitType, count: actual }]);
-  players[pid].minerals -= mineralCost;
-  players[pid].gas -= gasCost;
+  players[pid].minerals    -= mineralCost;
+  players[pid].gas         -= gasCost;
+  players[pid].actionsLeft -= 1;
 
-  const gasSuffix = gasCost > 0 ? ` -${gasCost}⛽` : '';
+  const gasSuffix  = gasCost > 0 ? ` -${gasCost}⛽` : '';
   const zergSuffix = actual !== count ? ` (×2 저그 보너스 → ${actual}기)` : '';
   return {
     ...state,
@@ -315,25 +361,24 @@ export function researchTech(state: GameState, techId: string): GameState {
   const tech = TECH_DEFS.find((t) => t.id === techId);
   if (!tech) return state;
 
-  // Faction gate (upgrade techs have no faction — available to all)
   if (tech.faction && tech.faction !== state.players[pid].faction) return state;
-  // Already researched
   if (state.players[pid].techs.includes(techId)) return state;
-  // Prerequisite
   if (tech.requires && !state.players[pid].techs.includes(tech.requires)) return state;
-  // Cost
   if (state.players[pid].minerals < tech.mineralCost) return state;
   if (state.players[pid].gas < tech.gasCost) return state;
+  // Action cost
+  if (state.players[pid].actionsLeft <= 0) return state;
 
-  const players = state.players.map((p) => ({ ...p, techs: [...p.techs] }));
-  players[pid].minerals -= tech.mineralCost;
-  players[pid].gas -= tech.gasCost;
+  const players = state.players.map(deepPlayer);
+  players[pid].minerals    -= tech.mineralCost;
+  players[pid].gas         -= tech.gasCost;
   players[pid].techs.push(techId);
+  players[pid].actionsLeft -= 1;
 
   if (tech.upgradeType === 'weapons') players[pid].weapons = Math.min(3, players[pid].weapons + 1);
   if (tech.upgradeType === 'armor')   players[pid].armor   = Math.min(3, players[pid].armor   + 1);
 
-  const unlockStr = tech.unlocksUnits?.length
+  const unlockStr  = tech.unlocksUnits?.length
     ? ` (${tech.unlocksUnits.map((u) => UNIT_DEFS[u].name).join(', ')} 해금)`
     : '';
   const upgradeStr = tech.upgradeType === 'weapons' ? ` (무기 Lv${players[pid].weapons})`
@@ -351,7 +396,8 @@ export function researchTech(state: GameState, techId: string): GameState {
 
 export function setDiplomacy(state: GameState, targetId: number, status: DiplomacyStatus): GameState {
   const pid = state.currentPlayerId;
-  const players = state.players.map((p) => ({ ...p, diplomacy: { ...p.diplomacy }, techs: [...p.techs] }));
+  // Diplomacy is FREE (no action cost)
+  const players = state.players.map(deepPlayer);
   players[pid].diplomacy[targetId] = status;
   if (status === 'ally') players[targetId].diplomacy[pid] = 'ally';
   if (status === 'war')  players[targetId].diplomacy[pid] = 'war';
@@ -365,45 +411,57 @@ export function setDiplomacy(state: GameState, targetId: number, status: Diploma
 }
 
 export function endTurn(state: GameState): GameState {
-  const players = state.players.map((p) => ({ ...p, techs: [...p.techs] }));
+  const players    = state.players.map(deepPlayer);
   const territories = state.territories.map((t) => ({ ...t, units: deepUnits(t.units) }));
-  const log = [...state.log];
-  const cur = state.currentPlayerId;
+  const log        = [...state.log];
+  const cur        = state.currentPlayerId;
+  const me         = players[cur];
 
-  // Collect mineral + gas income
-  let income = 0;
+  // ── Collect mineral + gas income ─────────────────────────────────────────
+  let income    = 0;
   let gasIncome = 0;
   for (const t of territories) {
     if (t.ownerId === cur) {
-      income += t.minerals;
+      income    += t.minerals;
       gasIncome += t.gasYield;
     }
   }
-  players[cur].minerals += income;
-  players[cur].gas += gasIncome;
+  me.minerals += income;
+  me.gas      += gasIncome;
 
-  // Zerg: spawn 1 zergling per owned territory (regen)
-  if (players[cur].faction === 'zerg') {
+  // ── Base development bonuses ─────────────────────────────────────────────
+  // 본진 (Main base): still owned → +2 minerals, +1 gas
+  if (me.homeId !== null && territories[me.homeId].ownerId === cur) {
+    me.minerals += 2;
+    me.gas      += 1;
+  }
+  // 앞마당 (Natural expansion): still owned → +1 minerals, +1 gas
+  if (me.naturalId !== null && territories[me.naturalId].ownerId === cur) {
+    me.minerals += 1;
+    me.gas      += 1;
+  }
+
+  // ── Faction unit spawning ─────────────────────────────────────────────────
+  if (me.faction === 'zerg') {
     for (const t of territories) {
       if (t.ownerId === cur) mergeUnits(t.units, [{ type: 'zergling', count: 1 }]);
     }
   }
-  // Primal Zerg: spawn 1 primal_zergling per owned territory (stronger regen)
-  if (players[cur].faction === 'primal_zerg') {
+  if (me.faction === 'primal_zerg') {
     for (const t of territories) {
       if (t.ownerId === cur) mergeUnits(t.units, [{ type: 'primal_zergling', count: 1 }]);
     }
   }
 
-  // Check elimination
+  // ── Elimination check ────────────────────────────────────────────────────
   if (territories.filter((t) => t.ownerId === cur).length === 0) {
-    players[cur].isAlive = false;
-    log.push(`☠ ${players[cur].name} 탈락!`);
+    me.isAlive = false;
+    log.push(`☠ ${me.name} 탈락!`);
   }
 
-  // Advance to next alive player
+  // ── Advance to next alive player ─────────────────────────────────────────
   const total = players.length;
-  let next = (cur + 1) % total;
+  let next  = (cur + 1) % total;
   let loops = 0;
   while (!players[next].isAlive && loops < total) {
     next = (next + 1) % total;
@@ -412,6 +470,14 @@ export function endTurn(state: GameState): GameState {
 
   const newTurn = next <= cur ? state.turn + 1 : state.turn;
   if (next <= cur) log.push(`─── 턴 ${newTurn} ───`);
+
+  // ── Reset next player's action points ───────────────────────────────────
+  players[next].actionsLeft = computeMaxActions(territories, next);
+  const bonus = players[next].actionsLeft - 3;
+  if (bonus > 0) {
+    const strategic = territories.filter((t) => t.ownerId === next && t.isStrategic).length;
+    log.push(`⚡ ${players[next].name}: 행동 포인트 ${players[next].actionsLeft} (전략 거점 ${strategic}개 보너스)`);
+  }
 
   const newState: GameState = { ...state, players, territories, log, turn: newTurn, currentPlayerId: next };
   const winner = checkWinner(newState);

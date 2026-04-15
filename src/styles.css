@@ -1350,3 +1350,77 @@ button:disabled { cursor: not-allowed; }
   color: #556;
   white-space: nowrap;
 }
+
+/* ── Action Point Bar ─────────────────────────────────────────────────────── */
+
+.ap-bar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: #0d1128;
+  border: 1px solid #2a3050;
+  border-radius: 8px;
+  padding: 3px 8px;
+}
+
+.ap-pip {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 1.5px solid #2a3050;
+  background: #111827;
+  transition: background 0.2s, box-shadow 0.2s;
+}
+
+.ap-pip.filled {
+  background: #22ee88;
+  border-color: #10cc66;
+  box-shadow: 0 0 5px #22ee8899;
+}
+
+.ap-label {
+  font-size: 10px;
+  color: #7be4aa;
+  margin-left: 2px;
+  white-space: nowrap;
+}
+
+/* ── Base Designation Badges ─────────────────────────────────────────────── */
+
+.base-badge {
+  display: inline-block;
+  font-size: 9px;
+  font-weight: 700;
+  padding: 1px 5px;
+  border-radius: 4px;
+  white-space: nowrap;
+}
+
+.home-badge {
+  background: #1a2e1a;
+  color: #66ee88;
+  border: 1px solid #44aa55;
+}
+
+.natural-badge {
+  background: #1a2a10;
+  color: #aadd44;
+  border: 1px solid #88aa22;
+}
+
+.strategic-badge {
+  background: #2a2800;
+  color: #ffd700;
+  border: 1px solid #aa9900;
+}
+
+/* ── Strategic Territory Card ────────────────────────────────────────────── */
+
+.territory-card.strategic {
+  border-left-width: 3px;
+  background: linear-gradient(135deg, #1a1a00 0%, #12121c 100%);
+}
+
+.territory-card.strategic .territory-card-header {
+  border-bottom-color: #ffd70033;
+}

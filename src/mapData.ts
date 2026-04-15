@@ -226,6 +226,8 @@ export const UNIT_DEFS: Record<UnitType, UnitDef> = {
 
 // ── Tech tree definitions ────────────────────────────────────────────────────
 
+export const STRATEGIC_IDS = [4, 5, 9, 13, 14] as const;
+
 export const TECH_DEFS: TechDef[] = [
   // 테란 도미니온
   { id: 'terran_factory',   name: '공장 건설',        faction: 'terran',      mineralCost: 4, gasCost: 2, unlocksUnits: ['siege_tank'], description: '시즈 탱크 생산 가능' },

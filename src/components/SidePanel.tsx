@@ -38,6 +38,11 @@ function computeUsedSupply(territories: Territory[], pid: number): number {
     .flatMap((t) => t.units)
     .reduce((s, u) => s + (UNIT_DEFS[u.type].supply ?? 0) * u.count, 0);
 }
+/** Max action points per turn. */
+function computeMaxActions(territories: Territory[], pid: number): number {
+  const strategic = territories.filter((t) => t.ownerId === pid && t.isStrategic).length;
+  return 3 + Math.floor(strategic / 2);
+}
 
 function availableUnits(faction: string): UnitType[] {
   const all: UnitType[] = [
@@ -67,10 +72,11 @@ const FACTION_LABEL: Record<string, string> = {
 // ── Sub-components ─────────────────────────────────────────────────────────
 
 function TerritoryCard({
-  territory, myColor, enemies, minerals, gas, onRecruit, canRecruit,
+  territory, myColor, enemies, minerals, gas, onRecruit, canRecruit, isHome, isNatural, isStrategic,
 }: {
   territory: Territory; myColor: string; enemies: boolean;
   minerals: number; gas: number; onRecruit: () => void; canRecruit: boolean;
+  isHome?: boolean; isNatural?: boolean; isStrategic?: boolean;
 }) {
   const atk = totalAttack(territory.units);
   const def = totalDefense(territory.units);
@@ -78,11 +84,19 @@ function TerritoryCard({
 
   return (
     <div
-      className="territory-card"
-      style={{ borderLeftColor: myColor, boxShadow: enemies ? '0 0 6px #f442' : undefined }}
+      className={`territory-card${isStrategic ? ' strategic' : ''}`}
+      style={{
+        borderLeftColor: myColor,
+        boxShadow: enemies ? '0 0 6px #f442' : isStrategic ? '0 0 8px #ffd70044' : undefined,
+      }}
     >
       <div className="territory-card-header">
-        <span className="territory-card-name">{territory.name}</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
+          <span className="territory-card-name">{territory.name}</span>
+          {isHome    && <span className="base-badge home-badge">⌂ 본진</span>}
+          {isNatural && <span className="base-badge natural-badge">앞마당</span>}
+          {isStrategic && <span className="base-badge strategic-badge">★전략</span>}
+        </div>
         <div className="territory-card-meta">
           {cnt > 0 && <span className="territory-card-power">⚔{atk} 🛡{def}</span>}
           <span className="territory-card-minerals">💎{minerals}</span>
@@ -145,6 +159,8 @@ export default function SidePanel({
 
   const supCap  = computeSupplyCap(state.territories, myPlayerIndex);
   const supUsed = computeUsedSupply(state.territories, myPlayerIndex);
+  const maxAP   = computeMaxActions(state.territories, myPlayerIndex);
+  const curAP   = isMyTurn ? me.actionsLeft : 0;
 
   const dipLabel: Record<DiplomacyStatus, string> = {
     ally: '🤝 동맹', neutral: '⚪ 중립', war: '⚔ 전쟁',
@@ -226,13 +242,23 @@ export default function SidePanel({
 
       {/* ── Turn banner ─────────────────────────────────────────────────── */}
       <div className="turn-banner" style={{ borderColor: currentPlayer?.color }}>
-        <span className="turn-banner-text">
-          {isAITurn
-            ? `⏳ ${currentPlayer?.name} (AI) 행동 중...`
-            : isMyTurn
-            ? '▶ 내 턴'
-            : `⌛ ${currentPlayer?.name}의 턴`}
-        </span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          <span className="turn-banner-text">
+            {isAITurn
+              ? `⏳ ${currentPlayer?.name} (AI) 행동 중...`
+              : isMyTurn
+              ? '▶ 내 턴'
+              : `⌛ ${currentPlayer?.name}의 턴`}
+          </span>
+          {isMyTurn && !isAITurn && (
+            <div className="ap-bar">
+              {Array.from({ length: maxAP }, (_, i) => (
+                <span key={i} className={`ap-pip ${i < curAP ? 'filled' : ''}`} />
+              ))}
+              <span className="ap-label">{curAP}/{maxAP} 행동</span>
+            </div>
+          )}
+        </div>
         <span className="turn-banner-num">턴 {state.turn}</span>
       </div>
 
@@ -276,7 +302,10 @@ export default function SidePanel({
                     minerals={t.minerals}
                     gas={t.gasYield}
                     onRecruit={() => openRecruit(t.id)}
-                    canRecruit={isMyTurn && !isAITurn && me.minerals >= 1}
+                    canRecruit={isMyTurn && !isAITurn && me.minerals >= 1 && me.actionsLeft > 0}
+                    isHome={me.homeId === t.id}
+                    isNatural={me.naturalId === t.id}
+                    isStrategic={t.isStrategic}
                   />
                 );
               })

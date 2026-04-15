@@ -120,6 +120,31 @@ function getBestRecruitTerritory(state: GameState, pid: number): Territory | nul
   return best ?? (myTerrs.length > 0 ? myTerrs[0] : null);
 }
 
+// ── Bulk recruit count ───────────────────────────────────────────────────────
+
+/** How many units of `unitType` can the player afford right now (minerals, gas, supply)? */
+function maxAffordable(
+  territories: Territory[],
+  pid: number,
+  minerals: number,
+  gas: number,
+  unitType: UnitType,
+  faction: Faction
+): number {
+  const def = UNIT_DEFS[unitType];
+  const actual = (faction === 'zerg' && def.zergDouble) ? 2 : 1; // units per purchase
+  const supPerPurchase = (def.supply ?? 0) * actual;
+  const cap = supplyCap(territories, pid);
+  const used = usedSupply(territories, pid);
+  const supplyLeft = cap - used;
+
+  const byMinerals = def.cost > 0 ? Math.floor(minerals / def.cost) : 99;
+  const byGas      = (def.gasCost ?? 0) > 0 ? Math.floor(gas / (def.gasCost ?? 1)) : 99;
+  const bySupply   = supPerPurchase > 0 ? Math.floor(supplyLeft / supPerPurchase) : 99;
+
+  return Math.max(0, Math.min(byMinerals, byGas, bySupply));
+}
+
 // ── Main AI loop ─────────────────────────────────────────────────────────────
 
 export async function runAITurns(
@@ -133,44 +158,52 @@ export async function runAITurns(
     const pid = s.currentPlayerId;
     const faction = s.players[pid].faction;
 
-    // 1. Diplomacy
+    // 1. Diplomacy (FREE — no action cost)
     const dip = getDiplomacyAction(s, pid);
     if (dip) s = setDiplomacy(s, dip.targetId, dip.status);
 
-    // 2. Research next available tech (faction or upgrade, probabilistic)
-    const nextTech = TECH_DEFS.find((t) => {
-      if (t.faction && t.faction !== faction) return false;
-      if (!t.faction && Math.random() > 0.4) return false; // upgrades less eagerly
-      if (s.players[pid].techs.includes(t.id)) return false;
-      if (t.requires && !s.players[pid].techs.includes(t.requires)) return false;
-      return s.players[pid].minerals >= t.mineralCost && s.players[pid].gas >= t.gasCost;
-    });
-    if (nextTech) s = researchTech(s, nextTech.id);
+    // 2. Research (costs 1 action)
+    if (s.players[pid].actionsLeft > 0) {
+      const nextTech = TECH_DEFS.find((t) => {
+        if (t.faction && t.faction !== faction) return false;
+        if (!t.faction && Math.random() > 0.4) return false; // upgrades less eagerly
+        if (s.players[pid].techs.includes(t.id)) return false;
+        if (t.requires && !s.players[pid].techs.includes(t.requires)) return false;
+        return s.players[pid].minerals >= t.mineralCost && s.players[pid].gas >= t.gasCost;
+      });
+      if (nextTech) s = researchTech(s, nextTech.id);
+    }
 
-    // 3. Recruit best available units (respecting supply + gas)
-    const recruitTerritory = getBestRecruitTerritory(s, pid);
-    if (recruitTerritory) {
-      let minerals = s.players[pid].minerals;
-      while (minerals >= 1) {
-        const cap = supplyCap(s.territories, pid);
-        const used = usedSupply(s.territories, pid);
-        if (used >= cap) break;
-        const unitType = bestUnitToBuy(faction, minerals, s.players[pid].gas, s.players[pid].techs);
-        if (!unitType) break;
-        s = recruitUnits(s, recruitTerritory.id, unitType, 1);
-        minerals = s.players[pid].minerals;
+    // 3. Recruit — bulk purchase in ONE action
+    if (s.players[pid].actionsLeft > 0) {
+      const recruitTerritory = getBestRecruitTerritory(s, pid);
+      if (recruitTerritory) {
+        const { minerals, gas, techs } = s.players[pid];
+        const unitType = bestUnitToBuy(faction, minerals, gas, techs);
+        if (unitType) {
+          const count = maxAffordable(s.territories, pid, minerals, gas, unitType, faction);
+          if (count >= 1) {
+            s = recruitUnits(s, recruitTerritory.id, unitType, count);
+          }
+        }
       }
     }
 
     await sleep(200);
 
-    // 4. Attack or reinforce
-    const attack = getBestAttack(s, pid);
-    if (attack) {
-      s = moveArmies(s, attack.fromId, attack.toId);
-    } else {
-      const reinforce = getBestReinforce(s, pid);
-      if (reinforce) s = moveArmies(s, reinforce.fromId, reinforce.toId);
+    // 4. Attack/reinforce — uses remaining actions (each move costs 1)
+    while (s.players[pid].actionsLeft > 0) {
+      const attack = getBestAttack(s, pid);
+      if (attack) {
+        s = moveArmies(s, attack.fromId, attack.toId);
+      } else {
+        const reinforce = getBestReinforce(s, pid);
+        if (reinforce) {
+          s = moveArmies(s, reinforce.fromId, reinforce.toId);
+        } else {
+          break; // nothing to do with remaining actions
+        }
+      }
     }
 
     await sleep(300);

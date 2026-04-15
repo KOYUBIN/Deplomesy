@@ -76,6 +76,7 @@ export interface Territory {
   adjacentIds: number[];
   minerals: number;
   gasYield: number;       // 턴당 가스 생산량 (0-2)
+  isStrategic: boolean;   // 전략적 요충지 — 방어 보너스 + 행동력 보너스
   ownerId: number | null;
   units: UnitCount[];
 }
@@ -93,6 +94,9 @@ export interface Player {
   techs: string[];        // 연구한 기술 ID 목록
   weapons: number;        // 무기 업그레이드 레벨 (0-3)
   armor: number;          // 방어 업그레이드 레벨 (0-3)
+  actionsLeft: number;    // 이번 턴 남은 행동 포인트
+  homeId: number | null;  // 본진 행성 ID
+  naturalId: number | null; // 앞마당 행성 ID (첫 번째 확장)
 }
 
 export interface GameState {
